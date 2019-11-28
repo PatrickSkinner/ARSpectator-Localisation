@@ -28,9 +28,6 @@ Mat clustered;
 
 Mat homography = Mat(3, 3, CV_32F);
 
-//vector<Vec4f> templateLines {Vec4f(0,0,0,2800), Vec4f(440,0,440,2800), Vec4f(1400,0,1400,2800), Vec4f(0,0,1400,0), Vec4f(0,2800,1400,2800)};
-//vector<Vec4f> templateLines {Vec4f(0,0,0,920), Vec4f(140,0,140,920), Vec4f(440,0,440,920), Vec4f(0,0,440,0), Vec4f(0,920,440,920)};
-
 vector<Vec4f> templateLines {Vec4f(0,0,0,920), Vec4f(140,0,140,920), Vec4f(440,0,440,920), Vec4f(0,920,440,920), Vec4f(0,0,440,0)};
 std::vector<Point2f> out;
 
@@ -125,8 +122,7 @@ extern "C++" vector<Match> getBestMatches(vector<Match> matches, vector<Vec4f> t
 extern "C++" double getAngle(Vec4f line1){
     double angle1 = atan2( ( line1[3] - line1[1] ), ( line1[2] - line1[0] ) );
     angle1 *= (180/ CV_PI);
-    angle1 = ((int) angle1 + 360)%360;
-    //if(angle1 < 0) angle1 = 180 + angle1;
+    angle1 = ((int) angle1 + 360) % 360;
     return abs(angle1);
 }
 
@@ -138,7 +134,6 @@ extern "C++" double getAngle(Vec4f line1, Vec4f line2){
     angle2 *= (180/ CV_PI);
     if(angle1 < 0) angle1 = 180 + angle1;
     if(angle2 < 0) angle2 = 180 + angle2;
-    //cout << "A1: " << angle1 << " , A2: " << angle2 << endl;
     return abs(angle1-angle2);
 }
 
@@ -196,7 +191,6 @@ extern "C++" vector<int> splitHorizontals( vector<Vec4f> lines ){
     y2 /= lines.size();
     float avgY = (y1+y2)/2;
     
-    //cout << "Y threshold: " << avgY<< endl;
     for(int i = 0; i < lines.size(); i++){
         if( getCenter(lines[i])[1] < avgY ){
             labels.push_back(0);
@@ -219,8 +213,6 @@ extern "C++" vector<Vec4f> cleanLines(vector<Vec4f> lines){
     int label = 0;
     float startAngle = getAngle(sortedLines[0]);
     for(int i = 0; i < sortedLines.size(); i++ ){
-        
-        //cout << "angle: " << getAngle(sortedLines[i]) << "\tstart angle: " << startAngle << "\tdifference: " << getAngle(sortedLines[i]) - startAngle << endl;
         
         float angle = getAngle(sortedLines[i]);
         if( angle >= 350 && angle <= 360 ){
@@ -248,7 +240,6 @@ extern "C++" vector<Vec4f> cleanLines(vector<Vec4f> lines){
             if(setLabel == 0) horizontals.push_back(sortedLines[i]);
             labels.push_back(setLabel);
         } else {
-            //cout << "Angle :" << sortedAngles[i] << ", last: " << lastOne << " new: " << setLabel+1 << " new K: " << k+1 << endl;
             setLabel += 1;
             labels.push_back(setLabel);
             lastOne = setLabel;
@@ -304,7 +295,7 @@ extern "C++" vector<Vec4f> cleanLines(vector<Vec4f> lines){
         
         line( clustered, Point(pushLine[0], pushLine[1]), Point(pushLine[2], pushLine[3]), Scalar(0,0,255), 2, 0);
     }
-    //imshow("Cleaned Lines", src);
+
     return cleanedLines;
 }
 
@@ -316,12 +307,11 @@ extern "C++" vector<Vec4f> getLines()
     {
         cout <<  "Could not open or find the image" << std::endl ;
     }
+    
     cvtColor(src, HSV, COLOR_BGR2HSV);
+    
     // Detect the field based on HSV Range Values
-    //inRange(HSV, Scalar(32, 124, 51), Scalar(46, 255, 191), thresh);
     inRange(HSV, Scalar(35, 30, 0), Scalar(80, 255, 255), thresh);
-    //inRange(HSV, Scalar(46, 10, 0), Scalar(70, 100, 255), thresh);
-    //thresh = src;
     Mat dst, invdst, cdst;
     GaussianBlur( thresh, invdst, Size( 5, 5 ), 0, 0 );
     Canny(invdst, dst, 50, 200, 3);
@@ -331,8 +321,6 @@ extern "C++" vector<Vec4f> getLines()
     HoughLinesP(dst, lines, 2, CV_PI/360, 100, 250, 45 );
     
     for(int i = 0; i < lines.size(); i++ ) line( cdst, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(255,0,0), 2, 0);
-    //imshow("Lines", cdst);
-    
     lineOut = cdst;
     
     return lines;
@@ -350,31 +338,7 @@ extern "C" void ComputePNP(Vec3f *&op, Vec2f *&ip, float ** rv, float ** tv, int
     
     
     imagePoints = Mat(4, 2, CV_32F, ip);
-    //cout << "imagePoints Pre = " << endl << " " << imagePoints << endl << endl;
-    
     objectPoints = Mat(4, 3, CV_32F, op);
-    
-    /*
-    for(int i = 0; i < imagePoints.rows; i++){
-        Mat temp = Mat(1, 3, CV_32F);
-        temp.at<float>(0, 0) = imagePoints.at<float>(i, 0);
-        temp.at<float>(0, 1) = imagePoints.at<float>(i, 1);
-        temp.at<float>(0, 2) = 1;
-        temp = temp * homography;
-        imagePoints.at<float>(i, 0) = temp.at<float>(0, 0);
-        imagePoints.at<float>(i, 1) = temp.at<float>(0, 1);
-    }*/
-    
-    /*
-    imagePoints.at<float>(0, 0) = out[8].x;
-    imagePoints.at<float>(0, 1) = out[8].y;
-    imagePoints.at<float>(1, 0) = out[5].x;
-    imagePoints.at<float>(1, 1) = out[5].y;
-    imagePoints.at<float>(2, 0) = out[0].x;
-    imagePoints.at<float>(2, 1) = out[0].y;
-    imagePoints.at<float>(3, 0) = out[4].x;
-    imagePoints.at<float>(3, 1) = out[4].y;
-    */
     
     imagePoints.at<float>(2, 0) = out[6].x;
     imagePoints.at<float>(2, 1) = out[6].y;
@@ -410,25 +374,18 @@ extern "C" int sendImage(uint8_t *&image, int& width, int& height, int& crop)
     double elapsed;
     start = clock();
     
-    cout << "/n/n/n good news gamers, the crop amount is : " << crop << endl;
-    
     src = Mat(height, width, CV_8UC3, *&image);
     flip(src, src, +1);
-    //Mat finale = Mat(height, width, CV_8UC4, *&image);
     finale = src.clone();
-    //src = imread("test.png");
     
     if (!src.empty()) {
         cout << "src not empty, yay! " << endl;
-        //Mat finale = src.clone();
-        
+
         Mat converted;
         cvtColor(src, converted, COLOR_RGB2BGRA);
         src = converted;
         
         vector<Vec4f> rawLines = getLines();
-        //templateLines = {Vec4f(0,0,0,2800), Vec4f(440,0,440,2800), Vec4f(1400,0,1400,2800), Vec4f(0,0,1400,0), Vec4f(0,2800,1400,2800)};
-        //templateLines = {Vec4f(0,0,0,920), Vec4f(140,0,140,920), Vec4f(440,0,440,920), Vec4f(0,0,440,0), Vec4f(0,920,440,920)};
         //templateLines = {Vec4f(0,0,0,920), Vec4f(140,0,140,920), Vec4f(440,0,440,920), Vec4f(0,920,440,920), Vec4f(0,0,440,0)};
         
         vector<Vec4f> lines = cleanLines(rawLines);
@@ -437,10 +394,7 @@ extern "C" int sendImage(uint8_t *&image, int& width, int& height, int& crop)
         {
             Vec4f l = lines[i];
             line( lineOut, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(0,0,255), 2, 0);
-        }
-        
-        //imshow("src", src);
-        
+        } 
         
         for( size_t i = 0; i < templateLines.size(); i++ )
         {
@@ -578,7 +532,6 @@ extern "C" int sendImage(uint8_t *&image, int& width, int& height, int& crop)
             //templateLines = {Vec4f(0,0,0,2800), Vec4f(440,0,440,2800), Vec4f(1400,0,1400,2800), Vec4f(0,0,1400,0), Vec4f(0,2800,1400,2800)};
             
             std::vector<Point2f> in;
-            //std::vector<Point2f> out;
                 
             for( int i = 0; i < templateLines.size(); i++){
                 in.push_back( Point2f( templateLines[i][0], templateLines[i][1]) );
@@ -621,22 +574,13 @@ extern "C" void GetRawImageBytes(unsigned char*& data, int& width, int& height)
 {
     //Resize Mat to match the array passed to it from C#
     if(!src.empty()){
-        
-        //cout << width << " x " << height << endl;
-        
+             
         cv::Mat resizedMat(height, width, clustered.type());
         cv::resize(clustered, resizedMat, resizedMat.size(), cv::INTER_CUBIC);
         
         //Convert from RGB to ARGB
         cv::Mat argb_img;
         cv::cvtColor(resizedMat, argb_img, COLOR_BGR2RGBA);
-        
-        //argb_img = cv::Scalar(0,255,0,255);
-        cv::Mat test(height, width, CV_32F);
-        test = cv::Scalar(0,255,0,255);
-        //line( argb_img, Point(20,0), Point(20,1080), Scalar(0,0,255), 5, 0);
-        //flip(test, test, +1);
         std::memcpy(data, argb_img.data, argb_img.total() * argb_img.elemSize());
-        //std::memcpy(data, test.data, test.total() * test.elemSize());
     }
 }
