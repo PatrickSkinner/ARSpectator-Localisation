@@ -282,18 +282,20 @@ extern "C++" vector<Vec4f> cleanLines(vector<Vec4f> lines){
                 points.push_back( Vec2f(sortedLines[j][2], sortedLines[j][3]));
             }
         }
-        Vec4f outputLine;
-        fitLine(points, outputLine, DIST_L12, 0, 0.01, 0.01);
-        
-        // Convert from direction/point format to a line defined by its endpoints
-        Vec4f pushLine = Vec4f(outputLine[2] + outputLine[0]*150, // 150 is arbitrary, line length isn't considered when converted to homogenous coordinates later.
-                               outputLine[3] + outputLine[1]*150,
-                               outputLine[2] - outputLine[0]*150,
-                               outputLine[3] - outputLine[1]*150
-                               );
-        cleanedLines.push_back( pushLine );
-        
-        line( clustered, Point(pushLine[0], pushLine[1]), Point(pushLine[2], pushLine[3]), Scalar(0,0,255), 2, 0);
+        if(points.size() != 0 ){
+            Vec4f outputLine;
+            fitLine(points, outputLine, DIST_L12, 0, 0.01, 0.01);
+            
+            // Convert from direction/point format to a line defined by its endpoints
+            Vec4f pushLine = Vec4f(outputLine[2] + outputLine[0]*150, // 150 is arbitrary, line length isn't considered when converted to homogenous coordinates later.
+                                   outputLine[3] + outputLine[1]*150,
+                                   outputLine[2] - outputLine[0]*150,
+                                   outputLine[3] - outputLine[1]*150
+                                   );
+            cleanedLines.push_back( pushLine );
+            
+            line( clustered, Point(pushLine[0], pushLine[1]), Point(pushLine[2], pushLine[3]), Scalar(0,0,255), 2, 0);
+        }
     }
 
     return cleanedLines;
