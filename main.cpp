@@ -29,12 +29,13 @@ Mat clustered;
 Mat homography = Mat(3, 3, CV_32F);
 
 vector<Vec4f> templateLines {Vec4f(0,0,0,920), Vec4f(140,0,140,920), Vec4f(440,0,440,920), Vec4f(0,920,440,920), Vec4f(0,0,440,0)};
+vector<Vec4f> templateLinesDefault {Vec4f(0,0,0,920), Vec4f(140,0,140,920), Vec4f(440,0,440,920), Vec4f(0,920,440,920), Vec4f(0,0,440,0)};
 std::vector<Point2f> out;
 
 class Match{
 public:
-    Vec4f l1; // Template Line
-    Vec4f l2; // Detected Line
+    Vec4f l1; // Template Line x,y,x,y
+    Vec4f l2; // Detected Line x,y,x,y
     
     double dist;
     
@@ -49,6 +50,21 @@ public:
         l2 = line2;
         dist = distance;
     }
+    
+    Vec2f getCenter(Vec4f line){
+        return Vec2f( ((line[0] + line[2] )/2) , ((line[1] + line[3] )/2) );
+    }
+    
+    float xDistance(){
+        if(dist == 99999) return dist;
+        return abs(getCenter(l1)[0] - getCenter(l2)[0]);
+    }
+    
+    float yDistance(){
+        if(dist == 99999) return dist;
+        return abs(getCenter(l1)[1] - getCenter(l2)[1]);
+    }
+    
 };
 
 /** compared matches by distance for sorting purposes */
@@ -67,8 +83,10 @@ extern "C++" vector<Match> getBestMatches(vector<Match> matches, vector<Vec4f> t
     
     Match candidate;
     for(int i = 0; i < matches.size(); i++){
-        if(matches[i].dist < candidate.dist){
-            if(matches[i].l1 == templateLines[0]) candidate = matches[i]; // find best match for leftmost template line
+        if(matches[i].xDistance() < candidate.xDistance()){
+            if(matches[i].l1 == templateLines[0]){
+                candidate = matches[i]; // find best match for leftmost template line
+            }
         }
     }
     bestMatches.push_back(candidate);
@@ -76,7 +94,7 @@ extern "C++" vector<Match> getBestMatches(vector<Match> matches, vector<Vec4f> t
     for(int i = 1; i < templateLines.size()-2; i++){
         candidate = Match();
         for(int j = 0; j < matches.size(); j++){
-            if(matches[j].dist < candidate.dist){
+            if(matches[j].xDistance() < candidate.xDistance()){
                 if(matches[j].l1 == templateLines[i]){
                     if( getCenter(matches[j].l2)[0] > getCenter(bestMatches[i-1].l2)[0] ){ // Candidate match midpoint is to the right of previous matched line
                         candidate = matches[j];
@@ -90,7 +108,7 @@ extern "C++" vector<Match> getBestMatches(vector<Match> matches, vector<Vec4f> t
     candidate = Match();
     for( int i = 0; i < matches.size(); i++){
         bool flag = false;
-        if(matches[i].dist < candidate.dist){
+        if(matches[i].yDistance() < candidate.yDistance()){
             for(int j = 0; j < bestMatches.size(); j++){
                 if( matches[i].l2 == bestMatches[j].l2){
                     flag = true;
@@ -104,7 +122,7 @@ extern "C++" vector<Match> getBestMatches(vector<Match> matches, vector<Vec4f> t
     candidate = Match();
     for( int i = 0; i < matches.size(); i++){
         bool flag = false;
-        if(matches[i].dist < candidate.dist){
+        if(matches[i].yDistance() < candidate.yDistance()){
             for(int j = 0; j < bestMatches.size(); j++){
                 if( matches[i].l2 == bestMatches[j].l2){
                     flag = true;
@@ -204,7 +222,7 @@ extern "C++" vector<int> splitHorizontals( vector<Vec4f> lines ){
 
 /** Find the best fitting line for each line cluster and return the line set of best fitting lines */
 extern "C++" vector<Vec4f> cleanLines(vector<Vec4f> lines){
-    int angleThreshold = 7;
+    int angleThreshold = 4;
     
     vector<Vec4f> sortedLines = lines;
     vector<int> sortedAngles;
@@ -219,7 +237,9 @@ extern "C++" vector<Vec4f> cleanLines(vector<Vec4f> lines){
             sortedAngles.push_back(0);
         }else if( (angle - startAngle) < angleThreshold){           // adjust cluster ranges here
             sortedAngles.push_back(label);
+            startAngle = angle;
         } else {
+            // Move to next cluster
             label++;
             sortedAngles.push_back(label);
             startAngle = angle;
@@ -297,7 +317,7 @@ extern "C++" vector<Vec4f> cleanLines(vector<Vec4f> lines){
             line( clustered, Point(pushLine[0], pushLine[1]), Point(pushLine[2], pushLine[3]), Scalar(0,0,255), 2, 0);
         }
     }
-
+    
     return cleanedLines;
 }
 
@@ -337,7 +357,6 @@ extern "C" void ComputePNP(Vec3f *&op, Vec2f *&ip, float ** rv, float ** tv, int
     
     Mat rotation;
     Mat translation;
-    
     
     imagePoints = Mat(4, 2, CV_32F, ip);
     objectPoints = Mat(4, 3, CV_32F, op);
@@ -381,42 +400,22 @@ extern "C" int sendImage(uint8_t *&image, int& width, int& height, int& crop)
     finale = src.clone();
     
     if (!src.empty()) {
-        cout << "src not empty, yay! " << endl;
-
+        
         Mat converted;
         cvtColor(src, converted, COLOR_RGB2BGRA);
         src = converted;
+        
         
         vector<Vec4f> rawLines = getLines();
         //templateLines = {Vec4f(0,0,0,920), Vec4f(140,0,140,920), Vec4f(440,0,440,920), Vec4f(0,920,440,920), Vec4f(0,0,440,0)};
         
         vector<Vec4f> lines = cleanLines(rawLines);
-        
+
         for( size_t i = 0; i < lines.size(); i++ )
         {
             Vec4f l = lines[i];
             line( lineOut, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(0,0,255), 2, 0);
-        } 
-        
-        for( size_t i = 0; i < templateLines.size(); i++ )
-        {
-            /*
-            templateLines[i][0] /= 4;
-            templateLines[i][2] /= 4;
-            templateLines[i][1] /= 4;
-            templateLines[i][3] /= 4;
-
-            templateLines[i][0] += 150;
-            templateLines[i][2] += 150;
-            templateLines[i][1] += 150;
-            templateLines[i][3] += 150;
-            
-            cout << templateLines[i][1] << "     BECOMES    " <<height - templateLines[i][1] << endl;
-            templateLines[i][1] = height - templateLines[i][1];
-            templateLines[i][3] = height - templateLines[i][3];
-            */
         }
-        
         
         // Record each possible match
         vector<Match> matches;
@@ -425,7 +424,7 @@ extern "C" int sendImage(uint8_t *&image, int& width, int& height, int& crop)
             for(int j = 0; j < lines.size(); j++)
             {
                 float dist = midpointDistance(templateLines[i], lines[j]);
-                if( (getAngle(templateLines[i], lines[j]) < 70) || (getAngle(templateLines[i], lines[j]) > 170)){
+                if( (getAngle(templateLines[i], lines[j]) < 55) || (getAngle(templateLines[i], lines[j]) > 170)){
                     matches.push_back( Match(templateLines[i], lines[j], dist ));
                 }
             }
@@ -433,14 +432,21 @@ extern "C" int sendImage(uint8_t *&image, int& width, int& height, int& crop)
         
         sort(matches.begin(), matches.end(), compareMatches);
         vector<Match> bestMatches = getBestMatches(matches, templateLines);
-
-        
         vector<Vec3f> templateH = vector<Vec3f>(templateLines.size());
         vector<Vec3f> matchedH = vector<Vec3f>(templateLines.size());
         
         // Take detected lines and template line sets and convert them to homogenous coordinates
         for(int i = 0; i < bestMatches.size(); i++){
-            templateH[i] = Vec3f(bestMatches[i].l1[0], bestMatches[i].l1[1], 1).cross( Vec3f(bestMatches[i].l1[2], bestMatches[i].l1[3], 1 ) );
+            
+            // Find the corresponding non-warped template line to use for Homography estimation
+            int index = 0;
+            for(int j = 0; j < templateLines.size(); j++){
+                if( templateLines[j] == bestMatches[i].l1){
+                    index = j;
+                }
+            }
+            //templateH[i] = Vec3f(bestMatches[i].l1[0], bestMatches[i].l1[1], 1).cross( Vec3f(bestMatches[i].l1[2], bestMatches[i].l1[3], 1 ) );
+            templateH[i] = Vec3f(templateLinesDefault[index][0], templateLinesDefault[index][1], 1).cross( Vec3f(templateLinesDefault[index][2], templateLinesDefault[index][3], 1 ) );
             if(templateH[i][2] != 0){
                 templateH[i][0] /= templateH[i][2];
                 templateH[i][1] /= templateH[i][2];
@@ -453,9 +459,13 @@ extern "C" int sendImage(uint8_t *&image, int& width, int& height, int& crop)
                 matchedH[i][1] /= matchedH[i][2];
                 matchedH[i][2] /= matchedH[i][2];
             }
+            
+            if(matchedH[i][2] == 0){
+                cout << "LINE MATCH MISSING, REJECTED";
+                templateLines = {Vec4f(0,0,0,920), Vec4f(140,0,140,920), Vec4f(440,0,440,920), Vec4f(0,920,440,920), Vec4f(0,0,440,0)};
+                return 0;
+            }
         }
-        
-        cout << "homographhhh" << endl;
         
         // Homography computation using SVD
         Mat aMat = Mat(0,9,CV_32F);
@@ -497,22 +507,19 @@ extern "C" int sendImage(uint8_t *&image, int& width, int& height, int& crop)
         transpose(aSVD.vt, rightSingular);
         Mat h = rightSingular.col( rightSingular.cols-1);
         
-        
         for (int i = 0 ; i < 3 ; i++){
             for (int j = 0 ; j < 3 ; j++){
                 homography.at<float>(i,j) = h.at<float>(3*i+j, 0);
             }
         }
         
-         //Mat warp = src.clone();
-         
-         for(int i = 0; i < templateH.size(); i++)
-         {
-             line( clustered, Point(bestMatches[i].l1[0], bestMatches[i].l1[1]), Point(bestMatches[i].l1[2], bestMatches[i].l1[3]), Scalar(0,255,255), 2, 0);
-             line( clustered, Point(bestMatches[i].l2[0], bestMatches[i].l2[1]), Point(bestMatches[i].l2[2], bestMatches[i].l2[3]), Scalar(255,0,255), 2, 0);
-             Vec2f tempMid = getCenter(bestMatches[i].l1);
-             Vec2f matchMid = getCenter(bestMatches[i].l2);
-             line( clustered, Point(tempMid[0], tempMid[1]), Point(matchMid[0], matchMid[1]), Scalar(0,255,100), 2, 0);
+        for(int i = 0; i < templateH.size(); i++)
+        {
+            line( clustered, Point(bestMatches[i].l1[0], bestMatches[i].l1[1]), Point(bestMatches[i].l1[2], bestMatches[i].l1[3]), Scalar(0,255,255), 2, 0);
+            line( clustered, Point(bestMatches[i].l2[0], bestMatches[i].l2[1]), Point(bestMatches[i].l2[2], bestMatches[i].l2[3]), Scalar(255,0,255), 2, 0);
+            Vec2f tempMid = getCenter(bestMatches[i].l1);
+            Vec2f matchMid = getCenter(bestMatches[i].l2);
+            line( clustered, Point(tempMid[0], tempMid[1]), Point(matchMid[0], matchMid[1]), Scalar(0,255,100), 2, 0);
         }
         
         cout << "\n\n\n Top Bottom Difference: " << getCenter(bestMatches[bestMatches.size()-2].l2)[1] - getCenter(bestMatches[bestMatches.size()-1].l2)[1] << "\n\n\n";
@@ -531,13 +538,11 @@ extern "C" int sendImage(uint8_t *&image, int& width, int& height, int& crop)
         }
         
         if(!homography.empty()){
-            //templateLines = {Vec4f(0,0,0,2800), Vec4f(440,0,440,2800), Vec4f(1400,0,1400,2800), Vec4f(0,0,1400,0), Vec4f(0,2800,1400,2800)};
-            
             std::vector<Point2f> in;
-                
+            
             for( int i = 0; i < templateLines.size(); i++){
-                in.push_back( Point2f( templateLines[i][0], templateLines[i][1]) );
-                in.push_back( Point2f( templateLines[i][2], templateLines[i][3]) );
+                in.push_back( Point2f( templateLinesDefault[i][0], templateLinesDefault[i][1]) );
+                in.push_back( Point2f( templateLinesDefault[i][2], templateLinesDefault[i][3]) );
             }
             
             for( int i = 0; i < in.size(); i += 2){
@@ -562,12 +567,12 @@ extern "C" int sendImage(uint8_t *&image, int& width, int& height, int& crop)
             
             end = clock();
             elapsed = ((double) (end - start)) / CLOCKS_PER_SEC;
-            std::cout << "Time Taken: " << elapsed << endl;
+            cout << "Time Taken: " << elapsed << endl;
             
             return 1;
         }
     }
-     
+    
     return 0;
 }
 
@@ -576,7 +581,6 @@ extern "C" void GetRawImageBytes(unsigned char*& data, int& width, int& height)
 {
     //Resize Mat to match the array passed to it from C#
     if(!src.empty()){
-             
         cv::Mat resizedMat(height, width, clustered.type());
         cv::resize(clustered, resizedMat, resizedMat.size(), cv::INTER_CUBIC);
         
