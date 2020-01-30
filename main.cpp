@@ -57,6 +57,22 @@ public:
     
     float xDistance(){
         if(dist == 99999) return dist;
+        /*
+        float grad1 = (l1[3]-l1[1]) / (l1[2]-l1[0]);
+        float grad2 = (l2[3]-l2[1]) / (l2[2]-l2[0]);
+        cout << "da gradientsz: " << grad1 << "    -    " << grad2 << endl;
+        
+        
+        int y = 500;
+        int x1 = l1[0]+(y / grad1);
+        int x2 = l2[0]+(y / grad2);
+        
+        if((l1[2]-l1[0]) == 0) x1 = l1[0];
+        if((l2[2]-l2[0]) == 0) x2 = l2[0];
+        
+        cout << "da goordinates: " << x1 << "    -    " << x2 << endl;
+        */
+        //return abs(x1-x2);
         return abs(getCenter(l1)[0] - getCenter(l2)[0]);
     }
     
@@ -173,6 +189,70 @@ extern "C++" float midpointDistance(Vec4f line1, Vec4f line2){
     return abs( lineLength( Vec4f(mid1[0], mid1[1], mid2[0], mid2[1] )));
 }
 
+/*
+extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, int bias){
+    float avgX = 0.0;
+    float avgY = 0.0;
+    float avgAngle = 0.0;
+    
+    for(int i = 0; i < inputLines.size(); i++){
+        avgX += getCenter(inputLines[i])[0];
+        avgY += getCenter(inputLines[i])[1];
+        avgAngle += getAngle(inputLines[i]);
+    }
+    
+    avgX /= inputLines.size();
+    avgY /= inputLines.size();
+    avgAngle /= inputLines.size();
+    
+    float grad = tan(avgAngle);
+    float len = 150;
+    
+    return Vec4f(avgX - len, avgY - (len*grad), avgX + len, avgY + (len*grad));
+}*/
+
+extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
+    float avgX = 0.0;
+    float avgY = 0.0;
+    float avgAngle = 0.0;
+    
+    float x = 0;
+    float y = 0;
+    float closestDist = 99999;
+    
+    for(int i = 0; i < inputLines.size(); i++){
+        avgX += getCenter(inputLines[i])[0];
+        avgY += getCenter(inputLines[i])[1];
+        
+        double angle = 0;
+        angle = atan2( ( inputLines[i][3] - inputLines[i][1] ), ( inputLines[i][2] - inputLines[i][0] ) );
+        avgAngle += angle;
+        
+        //float dist = abs( lineLength( Vec4f(getCenter(inputLines[i])[0], getCenter(inputLines[i])[1], center[0], center[1] )));+
+        
+
+        
+        float dist = abs(getCenter(inputLines[i])[1] - center[1]);
+        if( dist < closestDist ){
+            closestDist = dist;
+            x = getCenter(inputLines[i])[0];
+            y = getCenter(inputLines[i])[1];
+        }
+    }
+    
+    avgX /= inputLines.size();
+    avgY /= inputLines.size();
+    
+    avgX = x;
+    avgY = y;
+    avgAngle /= inputLines.size();
+    
+    float grad = tan(avgAngle);
+    float len = 1000;
+    
+    return Vec4f(avgX - len, avgY - (len*grad), avgX + len, avgY + (len*grad));
+}
+
 /** Calculate the total Hausdorff distance between two line sets */
 extern "C++" float getSetDistance(vector<Vec4f> templateLines, vector<Vec4f> detectedLines){
     float totalDistance = 0.0;
@@ -203,6 +283,7 @@ extern "C++" vector<int> splitHorizontals( vector<Vec4f> lines ){
     for(int i = 0; i < lines.size(); i++){
         y1 += lines[i][1];
         y2 += lines[i][3];
+        
     }
     
     y1 /= lines.size();
@@ -227,6 +308,10 @@ extern "C++" vector<Vec4f> cleanLines(vector<Vec4f> lines){
     vector<Vec4f> sortedLines = lines;
     vector<int> sortedAngles;
     
+    float centroidX = 0.0;
+    float centroidY = 0.0;
+    
+    
     sort(sortedLines.begin(), sortedLines.end(), compareVec); // Sort lines by gradient to make removing duplicates easier
     int label = 0;
     float startAngle = getAngle(sortedLines[0]);
@@ -244,6 +329,10 @@ extern "C++" vector<Vec4f> cleanLines(vector<Vec4f> lines){
             sortedAngles.push_back(label);
             startAngle = angle;
         }
+        
+        Vec2f mid = getCenter(sortedLines[i]);
+        centroidX += mid[0];
+        centroidY += mid[1];
     }
     
     /* Split horizontal lines into two clusters, for the bottom and top of the pitch */
@@ -289,20 +378,26 @@ extern "C++" vector<Vec4f> cleanLines(vector<Vec4f> lines){
             }
         }
     }
-    //imshow("Clustering", clustered);
     
     vector<Vec4f> cleanedLines;
     
     for(int i = 0; i < k+1; i++){
         vector<Vec2f> points;
+        vector<Vec4f> lines;
         
         for(int j = 0; j < labels.rows; j++){
             if(labels.at<int>(j) == i){
                 points.push_back( Vec2f(sortedLines[j][0], sortedLines[j][1]));
                 points.push_back( Vec2f(sortedLines[j][2], sortedLines[j][3]));
+                lines.push_back( Vec4f(sortedLines[j][0], sortedLines[j][1], sortedLines[j][2], sortedLines[j][3]));
             }
         }
         if(points.size() != 0 ){
+            
+            Vec2f centroid = Vec2f( centroidX / sortedLines.size(), centroidY / sortedLines.size());
+            Vec4f pushLine = fitBestLine(lines, centroid);
+            
+            /*
             Vec4f outputLine;
             fitLine(points, outputLine, DIST_L12, 0, 0.01, 0.01);
             
@@ -312,7 +407,9 @@ extern "C++" vector<Vec4f> cleanLines(vector<Vec4f> lines){
                                    outputLine[2] - outputLine[0]*150,
                                    outputLine[3] - outputLine[1]*150
                                    );
-            cleanedLines.push_back( pushLine );
+            
+             */
+             cleanedLines.push_back( pushLine );
             
             line( clustered, Point(pushLine[0], pushLine[1]), Point(pushLine[2], pushLine[3]), Scalar(0,0,255), 2, 0);
         }
@@ -405,10 +502,7 @@ extern "C" int sendImage(uint8_t *&image, int& width, int& height, int& crop)
         cvtColor(src, converted, COLOR_RGB2BGRA);
         src = converted;
         
-        
         vector<Vec4f> rawLines = getLines();
-        //templateLines = {Vec4f(0,0,0,920), Vec4f(140,0,140,920), Vec4f(440,0,440,920), Vec4f(0,920,440,920), Vec4f(0,0,440,0)};
-        
         vector<Vec4f> lines = cleanLines(rawLines);
 
         for( size_t i = 0; i < lines.size(); i++ )
