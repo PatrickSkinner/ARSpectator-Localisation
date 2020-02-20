@@ -22,7 +22,7 @@ Mat HSV;
 Mat thresh;
 Mat finuks;
 
-String filename = "test2.png";
+String filename = "test.png";
 
 class Match{
 public:
@@ -259,6 +259,7 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
     
     float x = 0;
     float y = 0;
+    float ang = 0;
     float closestDist = 99999;
     
     for(int i = 0; i < inputLines.size(); i++){
@@ -276,6 +277,7 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
             closestDist = dist;
             x = getCenter(inputLines[i])[0];
             y = getCenter(inputLines[i])[1];
+            ang = atan2( ( inputLines[i][3] - inputLines[i][1] ), ( inputLines[i][2] - inputLines[i][0] ) );
         }
         //cout << getAngle(inputLines[i]) << endl;
         //avgAngle += getAngle(inputLines[i]);
@@ -283,10 +285,12 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
     
     avgX /= inputLines.size();
     avgY /= inputLines.size();
-    
-    //avgX = x;
-    //avgY = y;
     avgAngle /= inputLines.size();
+    
+    // Over ride averaging with closest line to center
+    avgX = x;
+    avgY = y;
+    //avgAngle = ang;
     
     float grad = tan(avgAngle);
     float len = 1000;
@@ -303,8 +307,8 @@ vector<Vec4f> getLines()
     }
     cvtColor(src, HSV, COLOR_BGR2HSV);
     // Detect the field based on HSV Range Values
-    //inRange(HSV, Scalar(32, 110, 51), Scalar(46, 255, 255), thresh);
-    inRange(HSV, Scalar(32, 124, 51), Scalar(46, 255, 191), thresh);
+    //inRange(HSV, Scalar(20, 10, 50), Scalar(45, 255, 255), thresh);
+    inRange(HSV, Scalar(32, 124, 51), Scalar(46, 255, 191), thresh); // Stadium Test Pics
     
     imshow("thresh af", thresh);
     
@@ -488,8 +492,6 @@ vector<Vec4f> cleanLines(vector<Vec4f> lines){
     }
     
     cleanedLines = trimLines(cleanedLines);
-    
-    imshow("Cleaned Lines", src);
     return cleanedLines;
 }
 
@@ -562,7 +564,6 @@ vector<Vec4f> rectifyLines(vector<Vec4f> inputLines){
     Vec3f intersectionLeft = constrainVec(hmgLinesAff[1].cross(hmgLinesAff[ hmgLinesAff.size()-1 ]));
     Vec3f intersectionRight = constrainVec(hmgLinesAff[1].cross(hmgLinesAff[ hmgLinesAff.size()-2 ]));
     Vec4f horizontalSegment = { intersectionLeft[0], intersectionLeft[1], intersectionRight[0], intersectionRight[1]};
-    //line( src, Point(horizontalSegment[0], horizontalSegment[1]), Point(horizontalSegment[2], horizontalSegment[3]), Scalar(255,255,255), 5, 0);
     
     //Generate a constraint circle from known length ratio between two non parallel lines
     float dx1 = affineLines[3][0] - affineLines[3][2];
@@ -621,7 +622,7 @@ vector<Vec4f> rectifyLines(vector<Vec4f> inputLines){
     int end = (int) metricPoints.size() - 1;
     if( (metricPoints[end].x+metricPoints[end-1].x)/2 > (metricPoints[4].x+metricPoints[5].x)/2 ){ // Final horizontal to to the right of first horizontal, order reversed.
         if((metricPoints[2].y+metricPoints[3].y)/2 > (metricPoints[0].y+metricPoints[1].y)/2){ // line 1 below line 0
-            cout << "MIRRORED" << endl;
+            cout << "MIRRORED on X" << endl;
             perspectiveTransform( metricPoints, metricPoints, mirror); // Mirror rectification
         } else {
             cout << "FLIPMODE" << endl;
@@ -647,8 +648,14 @@ vector<Vec4f> rectifyLines(vector<Vec4f> inputLines){
         }
     }
     
-    
-    
+    if( (metricPoints[end].x+metricPoints[end-1].x)/2 < (metricPoints[4].x+metricPoints[5].x)/2 ){
+        if((metricPoints[2].y+metricPoints[3].y)/2 < (metricPoints[0].y+metricPoints[1].y)/2){
+            cout << "MIRRORED on Y" << endl;
+            mirror.at<float>(0,0) = 1;
+            mirror.at<float>(1,1) = -1;
+            perspectiveTransform( metricPoints, metricPoints, mirror);
+        }
+    }
     
     
     
@@ -719,13 +726,48 @@ int main( int argc, char** argv){
         templateLines[i][2] /= 4;
         templateLines[i][1] /= 4;
         templateLines[i][3] /= 4;
-        
+     
         
         templateLines[i][0] += 150;
         templateLines[i][2] += 150;
         templateLines[i][1] += 150;
         templateLines[i][3] += 150;
     }
+    
+    
+    
+    
+    
+    float templateHeight = lineLength( templateLines[0] );
+    float rectifiedLinesHeight = lineLength(rectifiedLines[rectifiedLines.size() - 1]);
+    float diff = templateHeight/rectifiedLinesHeight;
+    cout << "diff: " << diff << endl;
+    
+    diff = 3;
+    Mat scaling = Mat(3, 3, CV_32F, Scalar(0));
+    scaling.at<float>(0,0) = diff;
+    scaling.at<float>(1,1) = diff;
+    scaling.at<float>(2,2) = 1;
+    
+    vector<Point2f> in;
+    vector<Point2f> out;
+    for( int i = 0; i < rectifiedLines.size(); i++){
+        in.push_back( Point2f( rectifiedLines[i][0], rectifiedLines[i][1]) );
+        in.push_back( Point2f( rectifiedLines[i][2], rectifiedLines[i][3]) );
+    }
+    
+    perspectiveTransform(in, out, scaling);
+    
+    vector<Vec4f> scaledLines;
+    for(int i = 0; i < out.size(); i += 2){
+        scaledLines.push_back(Vec4f( out[i].x, out[i].y, out[i+1].x, out[i+1].y));
+    }
+    
+    rectifiedLines = scaledLines;
+    
+    
+    
+    
     
     Vec2f templateCenter = getCenter(templateLines[0]);
     Vec2f rectifiedCenter = getCenter( rectifiedLines[ rectifiedLines.size() - 1]);
@@ -739,6 +781,10 @@ int main( int argc, char** argv){
         rectifiedLines[i][3] -= yAdjust;
     }
     
+    for(int i = 0; i < rectifiedLines.size(); i++){
+        //line( src, Point(rectifiedLines[i][0], rectifiedLines[i][1]), Point(rectifiedLines[i][2], rectifiedLines[i][3]), Scalar(0,255,100), 2, 0);
+    }
+    
     // Record each possible match
     vector<Match> matches;
     for(int i = 0; i < templateLines.size(); i++)
@@ -746,9 +792,9 @@ int main( int argc, char** argv){
         for(int j = 0; j < lines.size(); j++)
         {
             float dist = midpointDistance(templateLines[i], rectifiedLines[j]);
-            //if( (getAngle(templateLines[i], rectifiedLines[j]) < 70) || (getAngle(templateLines[i], rectifiedLines[j]) > 170)){
+            if( (getAngle(templateLines[i], rectifiedLines[j]) < 70) || (getAngle(templateLines[i], rectifiedLines[j]) > 170)){
                 matches.push_back( Match(templateLines[i], lines[j], dist ));
-            //}
+            }
         }
     }
     
@@ -880,6 +926,7 @@ int main( int argc, char** argv){
     elapsed = ((double) (end - start)) / CLOCKS_PER_SEC;
     std::cout << "Time Taken: " << elapsed << endl;;
     
+    imshow("Cleaned Lines", src);
     imshow("Finale", finale);
     //imshow("TEMPLATE", templateWarped);
     waitKey();
