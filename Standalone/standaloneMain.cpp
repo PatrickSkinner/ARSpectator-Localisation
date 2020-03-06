@@ -22,7 +22,7 @@ Mat HSV;
 Mat thresh;
 Mat finuks;
 
-String filename = "test.png";
+String filename = "test3.png";
 
 class Match{
 public:
@@ -214,7 +214,7 @@ float getSetDistance(vector<Vec4f> templateLines, vector<Vec4f> detectedLines){
             ad = Vec4f(templateLines[i][0], templateLines[i][1], detectedLines[j][2], detectedLines[j][3] );
             bc = Vec4f(templateLines[i][2], templateLines[i][3], detectedLines[j][0], detectedLines[j][1] );
             
-            totalDistance += min(    max( lineLength(ac),lineLength(bd)) ,     max( lineLength(ad),lineLength(bc))       );
+            totalDistance += min(    max( lineLength(ac),lineLength(bd)),     max( lineLength(ad),lineLength(bc))       );
         }
     }
     
@@ -262,6 +262,8 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
     float ang = 0;
     float closestDist = 99999;
     
+    float searchRange = 10;
+    
     for(int i = 0; i < inputLines.size(); i++){
         avgX += getCenter(inputLines[i])[0];
         avgY += getCenter(inputLines[i])[1];
@@ -277,20 +279,114 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
             closestDist = dist;
             x = getCenter(inputLines[i])[0];
             y = getCenter(inputLines[i])[1];
+            cout << "angle: " << ang << ",   X: "<< inputLines[i][3] - inputLines[i][1] << ",   Y: " << inputLines[i][3] - inputLines[i][1] << endl;
             ang = atan2( ( inputLines[i][3] - inputLines[i][1] ), ( inputLines[i][2] - inputLines[i][0] ) );
+            ang *= (180/CV_PI);
+            if(ang < 0) ang += 180;
+            //ang = getAngle(inputLines[i]);
         }
         //cout << getAngle(inputLines[i]) << endl;
         //avgAngle += getAngle(inputLines[i]);
     }
     
+    
     avgX /= inputLines.size();
     avgY /= inputLines.size();
     avgAngle /= inputLines.size();
     
-    // Over ride averaging with closest line to center
+    /*
+    // Override averaging with closest line to center
     avgX = x;
     avgY = y;
     //avgAngle = ang;
+    */
+    
+    
+    avgX = 0;
+    avgY = 0;
+    avgAngle = 0;
+    
+    
+    Point2f compare = Point2f(x, y);
+    int count = 0;
+    
+    for( int i = 0; i < inputLines.size(); i++){
+        if(ang >= 45 && ang <= 160){ // fix y axis
+            int distAtX = 0;
+            float grad = getGradient(inputLines[i]);
+            
+            float yDiff = y - inputLines[i][1];
+            float steps = yDiff / grad;
+            
+            /*
+            cout << "Grad: " << grad << endl;
+            cout << "yDiff: " << yDiff << endl;
+            cout << "Steps: " << steps << endl;
+            */
+            
+            Point2f p = Point2f(inputLines[i][0] + steps , y);
+            line( src, Point(inputLines[0][0], inputLines[0][1]), Point(inputLines[0][2], inputLines[0][3]), Scalar(200,0,255), 10, 0);
+            line( src, Point( p.x - 7, p.y), Point( p.x + 7, p.y), Scalar(255,255,255), 5, 0);
+            
+            //cout << "POINT P: " << p << endl << endl;
+            
+            distAtX = abs( lineLength( Vec4f(compare.x, compare.y, p.x, p.y )));
+            if(distAtX < searchRange){
+                
+                float thisAngle = atan2( ( inputLines[i][3] - inputLines[i][1] ), ( inputLines[i][2] - inputLines[i][0] ) );
+                //thisAngle *= (180/CV_PI);
+                //if(thisAngle < 0) thisAngle += 180;
+                cout << " thisAngle :    " << thisAngle << endl;
+                
+                
+                
+                avgX += p.x;
+                avgY += p.y;
+                avgAngle += thisAngle;
+                count++;
+            }
+        } else { // fix x axis
+            int distAtX = 0;
+            float grad = getGradient(inputLines[i]);
+            
+            float xDiff = x - inputLines[i][0];
+            float steps = xDiff * grad;
+            
+            /*
+            cout << "Grad: " << grad << endl;
+            cout << "xDiff: " << xDiff << endl;
+            cout << "Steps: " << steps << endl;
+            */
+            
+            Point2f p = Point2f(x, inputLines[i][1] + steps);
+            line( src, Point(inputLines[0][0], inputLines[0][1]), Point(inputLines[0][2], inputLines[0][3]), Scalar(200,0,255), 10, 0);
+            line( src, Point( p.x, p.y-9), Point( p.x, p.y+9), Scalar(255,255,255), 5, 0);
+            
+            distAtX = abs( lineLength( Vec4f(compare.x, compare.y, p.x, p.y )));
+            
+            if(distAtX < searchRange){
+                float thisAngle = atan2( ( inputLines[i][3] - inputLines[i][1] ), ( inputLines[i][2] - inputLines[i][0] ) );
+                //thisAngle *= (180/CV_PI);
+                //if(thisAngle < 0) thisAngle += 180;
+                cout << " thisAngle :    " << thisAngle << endl;
+                
+                
+                
+                avgX += p.x;
+                avgY += p.y;
+                avgAngle += thisAngle;
+                count++;
+                
+            }
+        }
+    }
+    
+    
+    avgX /= count;
+    avgY /= count;
+    avgAngle /= count;
+    
+    cout << "THE NEW ANGLE FOR DAS CLUSTER BE: " << avgAngle << endl << endl;
     
     float grad = tan(avgAngle);
     float len = 1000;
@@ -460,7 +556,7 @@ vector<Vec4f> cleanLines(vector<Vec4f> lines){
         Scalar colour = Scalar( ( rand() % (int) ( 255 + 1 ) ), ( rand() % (int) ( 255 + 1 ) ), ( rand() % (int) ( 255 + 1 ) )); // Random colour for each cluster
         for(int j = 0; j < labels.rows; j++){
             if(labels.at<int>(j) == i){
-                line( clustered, Point(sortedLines[j][0], sortedLines[j][1]), Point(sortedLines[j][2], sortedLines[j][3]), colour, 5, 0);
+                line( clustered, Point(sortedLines[j][0], sortedLines[j][1]), Point(sortedLines[j][2], sortedLines[j][3]), colour, 2, 0);
             }
         }
     }
@@ -572,7 +668,7 @@ vector<Vec4f> rectifyLines(vector<Vec4f> inputLines){
     float dx2 = horizontalSegment[0] - horizontalSegment[2];
     float dy2 = horizontalSegment[1] - horizontalSegment[3];
     
-    float ratio = 6.36; // Horizontal and vertical lines are of equal length
+    float ratio = 6.36;
     
     float ca2 = ((dx1*dy1) - ((ratio*ratio)*dx2*dy2)) / ((dy1*dy1)-((ratio*ratio)*(dy2*dy2)));
     float cb2 = 0;
