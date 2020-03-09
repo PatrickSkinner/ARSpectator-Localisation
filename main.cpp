@@ -26,6 +26,8 @@ Mat lineOut;
 Mat finale;
 Mat clustered;
 
+Mat finuks;
+
 Mat homography = Mat(3, 3, CV_32F);
 
 vector<Vec4f> templateLines {Vec4f(0,0,0,920), Vec4f(140,0,140,920), Vec4f(440,0,440,920), Vec4f(0,920,440,920), Vec4f(0,0,440,0)};
@@ -50,37 +52,6 @@ public:
         l2 = line2;
         dist = distance;
     }
-    
-    Vec2f getCenter(Vec4f line){
-        return Vec2f( ((line[0] + line[2] )/2) , ((line[1] + line[3] )/2) );
-    }
-    
-    float xDistance(){
-        if(dist == 99999) return dist;
-        /*
-        float grad1 = (l1[3]-l1[1]) / (l1[2]-l1[0]);
-        float grad2 = (l2[3]-l2[1]) / (l2[2]-l2[0]);
-        cout << "da gradientsz: " << grad1 << "    -    " << grad2 << endl;
-        
-        
-        int y = 500;
-        int x1 = l1[0]+(y / grad1);
-        int x2 = l2[0]+(y / grad2);
-        
-        if((l1[2]-l1[0]) == 0) x1 = l1[0];
-        if((l2[2]-l2[0]) == 0) x2 = l2[0];
-        
-        cout << "da goordinates: " << x1 << "    -    " << x2 << endl;
-        */
-        //return abs(x1-x2);
-        return abs(getCenter(l1)[0] - getCenter(l2)[0]);
-    }
-    
-    float yDistance(){
-        if(dist == 99999) return dist;
-        return abs(getCenter(l1)[1] - getCenter(l2)[1]);
-    }
-    
 };
 
 /** compared matches by distance for sorting purposes */
@@ -93,16 +64,114 @@ extern "C++" Vec2f getCenter(Vec4f line){
     return Vec2f( ((line[0] + line[2] )/2) , ((line[1] + line[3] )/2) );
 }
 
-/** for each template line (L1), find the best matching line in the image (L2) */
-extern "C++" vector<Match> getBestMatches(vector<Match> matches, vector<Vec4f> templateLines){
+/** Cotangent function */
+float cotan(float i) {
+    if( i < CV_PI/2 + 0.001 && i > CV_PI/2 - 0.001){
+        return 0;
+    }
+    return(1 / tan(i));
+}
+
+
+/** Find intersection point of two circles, code from jupdike on Github */
+Point2f intersectTwoCircles(float x1, float y1, float r1, float x2, float y2, float r2) {
+    float centerdx = x1 - x2;
+    float centerdy = y1 - y2;
+    float R = sqrt(centerdx * centerdx + centerdy * centerdy);
+    if (!(abs(r1 - r2) <= R && R <= r1 + r2)) { // no intersection
+        return Point2f(0,0);
+    }
+    
+    float R2 = R*R;
+    float R4 = R2*R2;
+    float a = (r1*r1 - r2*r2) / (2 * R2);
+    float r2r2 = (r1*r1 - r2*r2);
+    float c =sqrt(2 * (r1*r1 + r2*r2) / R2 - (r2r2 * r2r2) / R4 - 1);
+    
+    float fx = (x1+x2) / 2 + a * (x2 - x1);
+    float gx = c * (y2 - y1) / 2;
+    //float ix1 = fx + gx;
+    float ix2 = fx - gx;
+    
+    float fy = (y1+y2) / 2 + a * (y2 - y1);
+    float gy = c * (x1 - x2) / 2;
+    //float iy1 = fy + gy;
+    float iy2 = fy - gy;
+    
+    // note if gy == 0 and gx == 0 then the circles are tangent and there is only one solution
+    // but that one solution will just be duplicated as the code is currently written
+    
+    return Point2f(ix2, iy2);
+}
+
+/** Convert homogenous vector to form (x, y, 1) */
+Vec3f constrainVec(Vec3f in){
+    if(in[2] != 0){
+        return Vec3f( in[0]/in[2], in[1]/in[2], in[2]/in[2]);
+    } else {
+        return in;
+    }
+}
+
+/** Return intersection of two lines in homogenous coordinates */
+Vec3f intersect(Vec3f a, Vec3f b){
+    return constrainVec( a.cross(b) );
+}
+
+/** Take a set of intersecting lines and change the endpoints of each line to the intersection points */
+vector<Vec4f> trimLines(vector<Vec4f> inputLines){
+    vector<Vec4f> outputLines;
+    
+    // Convert lines to homogenous form
+    vector<Vec3f> hmgLines;
+    for(int i = 0; i < inputLines.size(); i++){
+        hmgLines.push_back( Vec3f(inputLines[i][0], inputLines[i][1], 1).cross( Vec3f(inputLines[i][2], inputLines[i][3], 1 ) ) );
+    }
+    
+    int n = (int) inputLines.size();
+    
+    // Top horizontal
+    Vec3f inter1 = intersect( hmgLines[0], hmgLines[2]);
+    Vec3f inter2 = intersect( hmgLines[0], hmgLines[n-1]);
+    outputLines.push_back( Vec4f( inter1[0], inter1[1], inter2[0], inter2[1]) );
+    
+    // Bottom horizontal
+    inter1 = intersect( hmgLines[1], hmgLines[2]);
+    inter2 = intersect( hmgLines[1], hmgLines[n-1]);
+    outputLines.push_back( Vec4f( inter1[0], inter1[1], inter2[0], inter2[1]) );
+    
+    // Vertical Lines.
+    for(int i = 2; i < n; i++){
+        inter1 = intersect( hmgLines[i], hmgLines[0]);
+        inter2 = intersect( hmgLines[i], hmgLines[1]);
+        outputLines.push_back( Vec4f( inter1[0], inter1[1], inter2[0], inter2[1]) );
+    }
+    
+    return outputLines;
+}
+
+/** Get gradient of given line */
+float getGradient(Vec4f v)
+{
+    float vGrad;
+    
+    if( (v[2] - v[0]) != 0 ){
+        vGrad = ((v[3] - v[1] + 0.0) / (v[2] - v[0] + 0.0));
+    } else {
+        vGrad = 0.0;
+    }
+    
+    return vGrad;
+}
+
+/** for each L1, find the best matching L2 */
+vector<Match> getBestMatches(vector<Match> matches, vector<Vec4f> templateLines){
     vector<Match> bestMatches;
     
     Match candidate;
     for(int i = 0; i < matches.size(); i++){
-        if(matches[i].xDistance() < candidate.xDistance()){
-            if(matches[i].l1 == templateLines[0]){
-                candidate = matches[i]; // find best match for leftmost template line
-            }
+        if(matches[i].dist < candidate.dist){
+            if(matches[i].l1 == templateLines[0]) candidate = matches[i]; // find best match for leftmost template line
         }
     }
     bestMatches.push_back(candidate);
@@ -110,7 +179,7 @@ extern "C++" vector<Match> getBestMatches(vector<Match> matches, vector<Vec4f> t
     for(int i = 1; i < templateLines.size()-2; i++){
         candidate = Match();
         for(int j = 0; j < matches.size(); j++){
-            if(matches[j].xDistance() < candidate.xDistance()){
+            if(matches[j].dist < candidate.dist){
                 if(matches[j].l1 == templateLines[i]){
                     if( getCenter(matches[j].l2)[0] > getCenter(bestMatches[i-1].l2)[0] ){ // Candidate match midpoint is to the right of previous matched line
                         candidate = matches[j];
@@ -124,7 +193,7 @@ extern "C++" vector<Match> getBestMatches(vector<Match> matches, vector<Vec4f> t
     candidate = Match();
     for( int i = 0; i < matches.size(); i++){
         bool flag = false;
-        if(matches[i].yDistance() < candidate.yDistance()){
+        if(matches[i].dist < candidate.dist){
             for(int j = 0; j < bestMatches.size(); j++){
                 if( matches[i].l2 == bestMatches[j].l2){
                     flag = true;
@@ -138,7 +207,7 @@ extern "C++" vector<Match> getBestMatches(vector<Match> matches, vector<Vec4f> t
     candidate = Match();
     for( int i = 0; i < matches.size(); i++){
         bool flag = false;
-        if(matches[i].yDistance() < candidate.yDistance()){
+        if(matches[i].dist < candidate.dist){
             for(int j = 0; j < bestMatches.size(); j++){
                 if( matches[i].l2 == bestMatches[j].l2){
                     flag = true;
@@ -151,6 +220,7 @@ extern "C++" vector<Match> getBestMatches(vector<Match> matches, vector<Vec4f> t
     
     return bestMatches;
 }
+
 
 /** Get angle of given line */
 extern "C++" double getAngle(Vec4f line1){
@@ -189,28 +259,7 @@ extern "C++" float midpointDistance(Vec4f line1, Vec4f line2){
     return abs( lineLength( Vec4f(mid1[0], mid1[1], mid2[0], mid2[1] )));
 }
 
-/*
-extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, int bias){
-    float avgX = 0.0;
-    float avgY = 0.0;
-    float avgAngle = 0.0;
-    
-    for(int i = 0; i < inputLines.size(); i++){
-        avgX += getCenter(inputLines[i])[0];
-        avgY += getCenter(inputLines[i])[1];
-        avgAngle += getAngle(inputLines[i]);
-    }
-    
-    avgX /= inputLines.size();
-    avgY /= inputLines.size();
-    avgAngle /= inputLines.size();
-    
-    float grad = tan(avgAngle);
-    float len = 150;
-    
-    return Vec4f(avgX - len, avgY - (len*grad), avgX + len, avgY + (len*grad));
-}*/
-
+/** Given a cluster of lines return one line that best represents the cluster */
 extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
     float avgX = 0.0;
     float avgY = 0.0;
@@ -218,7 +267,10 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
     
     float x = 0;
     float y = 0;
+    float ang = 0;
     float closestDist = 99999;
+    
+    float searchRange = 10;
     
     for(int i = 0; i < inputLines.size(); i++){
         avgX += getCenter(inputLines[i])[0];
@@ -228,24 +280,117 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
         angle = atan2( ( inputLines[i][3] - inputLines[i][1] ), ( inputLines[i][2] - inputLines[i][0] ) );
         avgAngle += angle;
         
-        //float dist = abs( lineLength( Vec4f(getCenter(inputLines[i])[0], getCenter(inputLines[i])[1], center[0], center[1] )));+
-        
-
+        //float dist = abs( lineLength( Vec4f(getCenter(inputLines[i])[0], getCenter(inputLines[i])[1], center[0], center[1] )));
         
         float dist = abs(getCenter(inputLines[i])[1] - center[1]);
         if( dist < closestDist ){
             closestDist = dist;
             x = getCenter(inputLines[i])[0];
             y = getCenter(inputLines[i])[1];
+            cout << "angle: " << ang << ",   X: "<< inputLines[i][3] - inputLines[i][1] << ",   Y: " << inputLines[i][3] - inputLines[i][1] << endl;
+            ang = atan2( ( inputLines[i][3] - inputLines[i][1] ), ( inputLines[i][2] - inputLines[i][0] ) );
+            ang *= (180/CV_PI);
+            if(ang < 0) ang += 180;
+            //ang = getAngle(inputLines[i]);
         }
+        //cout << getAngle(inputLines[i]) << endl;
+        //avgAngle += getAngle(inputLines[i]);
     }
+    
     
     avgX /= inputLines.size();
     avgY /= inputLines.size();
-    
-    avgX = x;
-    avgY = y;
     avgAngle /= inputLines.size();
+    
+    /*
+     // Override averaging with closest line to center
+     avgX = x;
+     avgY = y;
+     //avgAngle = ang;
+     */
+    
+    
+    avgX = 0;
+    avgY = 0;
+    avgAngle = 0;
+    
+    
+    Point2f compare = Point2f(x, y);
+    int count = 0;
+    
+    for( int i = 0; i < inputLines.size(); i++){
+        if(ang >= 45 && ang <= 160){ // fix y axis
+            int distAtX = 0;
+            float grad = getGradient(inputLines[i]);
+            
+            float yDiff = y - inputLines[i][1];
+            float steps = yDiff / grad;
+            
+            /*
+             cout << "Grad: " << grad << endl;
+             cout << "yDiff: " << yDiff << endl;
+             cout << "Steps: " << steps << endl;
+             */
+            
+            Point2f p = Point2f(inputLines[i][0] + steps , y);
+            line( src, Point(inputLines[0][0], inputLines[0][1]), Point(inputLines[0][2], inputLines[0][3]), Scalar(200,0,255), 10, 0);
+            line( src, Point( p.x - 7, p.y), Point( p.x + 7, p.y), Scalar(255,255,255), 5, 0);
+            
+            //cout << "POINT P: " << p << endl << endl;
+            
+            distAtX = abs( lineLength( Vec4f(compare.x, compare.y, p.x, p.y )));
+            if(distAtX < searchRange){
+                
+                float thisAngle = atan2( ( inputLines[i][3] - inputLines[i][1] ), ( inputLines[i][2] - inputLines[i][0] ) );
+                //thisAngle *= (180/CV_PI);
+                //if(thisAngle < 0) thisAngle += 180;
+                cout << " thisAngle :    " << thisAngle << endl;
+                
+                
+                
+                avgX += p.x;
+                avgY += p.y;
+                avgAngle += thisAngle;
+                count++;
+            }
+        } else { // fix x axis
+            int distAtX = 0;
+            float grad = getGradient(inputLines[i]);
+            
+            float xDiff = x - inputLines[i][0];
+            float steps = xDiff * grad;
+            
+            /*
+             cout << "Grad: " << grad << endl;
+             cout << "xDiff: " << xDiff << endl;
+             cout << "Steps: " << steps << endl;
+             */
+            
+            Point2f p = Point2f(x, inputLines[i][1] + steps);
+            line( src, Point(inputLines[0][0], inputLines[0][1]), Point(inputLines[0][2], inputLines[0][3]), Scalar(200,0,255), 10, 0);
+            line( src, Point( p.x, p.y-9), Point( p.x, p.y+9), Scalar(255,255,255), 5, 0);
+            
+            distAtX = abs( lineLength( Vec4f(compare.x, compare.y, p.x, p.y )));
+            
+            if(distAtX < searchRange){
+                float thisAngle = atan2( ( inputLines[i][3] - inputLines[i][1] ), ( inputLines[i][2] - inputLines[i][0] ) );
+                //thisAngle *= (180/CV_PI);
+                //if(thisAngle < 0) thisAngle += 180;
+
+                avgX += p.x;
+                avgY += p.y;
+                avgAngle += thisAngle;
+                count++;
+                
+            }
+        }
+    }
+    
+    
+    avgX /= count;
+    avgY /= count;
+    avgAngle /= count;
+    
     
     float grad = tan(avgAngle);
     float len = 1000;
@@ -396,28 +541,17 @@ extern "C++" vector<Vec4f> cleanLines(vector<Vec4f> lines){
             
             Vec2f centroid = Vec2f( centroidX / sortedLines.size(), centroidY / sortedLines.size());
             Vec4f pushLine = fitBestLine(lines, centroid);
-            
-            /*
-            Vec4f outputLine;
-            fitLine(points, outputLine, DIST_L12, 0, 0.01, 0.01);
-            
-            // Convert from direction/point format to a line defined by its endpoints
-            Vec4f pushLine = Vec4f(outputLine[2] + outputLine[0]*150, // 150 is arbitrary, line length isn't considered when converted to homogenous coordinates later.
-                                   outputLine[3] + outputLine[1]*150,
-                                   outputLine[2] - outputLine[0]*150,
-                                   outputLine[3] - outputLine[1]*150
-                                   );
-            
-             */
-             cleanedLines.push_back( pushLine );
+            cleanedLines.push_back( pushLine );
             
             line( clustered, Point(pushLine[0], pushLine[1]), Point(pushLine[2], pushLine[3]), Scalar(0,0,255), 2, 0);
         }
     }
     
+    cleanedLines = trimLines(cleanedLines);
     return cleanedLines;
 }
 
+/** Use OpenCVs Hough line detector to find all lines in the input image, src */
 extern "C++" vector<Vec4f> getLines()
 {
     Mat HSV;
@@ -445,9 +579,10 @@ extern "C++" vector<Vec4f> getLines()
     return lines;
 }
 
+/** Compute a rotation and translation to create an alignment between 2d image points and the corresponding 3D points on the virtual pitch */
 extern "C" void ComputePNP(Vec3f *&op, Vec2f *&ip, float ** rv, float ** tv, int& width, int& height)
 {
-    Mat imagePoints;
+    Mat imagePoints = Mat(4, 2, CV_32F);
     Mat objectPoints;
     Mat cameraMatrix;
     Mat distCoeffs;
@@ -455,7 +590,7 @@ extern "C" void ComputePNP(Vec3f *&op, Vec2f *&ip, float ** rv, float ** tv, int
     Mat rotation;
     Mat translation;
     
-    imagePoints = Mat(4, 2, CV_32F, ip);
+    //imagePoints = Mat(4, 2, CV_32F, ip);
     objectPoints = Mat(4, 3, CV_32F, op);
     
     imagePoints.at<float>(2, 0) = out[6].x;
@@ -486,6 +621,165 @@ extern "C" void ComputePNP(Vec3f *&op, Vec2f *&ip, float ** rv, float ** tv, int
     memcpy(*tv, translation.data, translation.total() * translation.elemSize());
 }
 
+/** input of form, horizontal, horizontal, verticals after, in order of right to left */
+vector<Vec4f> rectifyLines(vector<Vec4f> inputLines){
+    finuks = Mat(1080, 1920, CV_8UC1, Scalar(128,0,0));
+    
+    // Convert lines to homogenous form
+    vector<Vec3f> hmgLines;
+    for(int i = 0; i < inputLines.size(); i++){
+        hmgLines.push_back( Vec3f(inputLines[i][0], inputLines[i][1], 1).cross( Vec3f(inputLines[i][2], inputLines[i][3], 1 ) ) );
+    }
+    
+    
+    // Find intersections of parallel line pairs to finding vanishing points
+    Vec3f intersection1 = constrainVec( hmgLines[0].cross(hmgLines[1]) ); // intersection of horizontals
+    Vec3f intersection2 = constrainVec( hmgLines[2].cross(hmgLines[3]) ); // intersection of verticals
+    
+    // Find the line at infinity between the vanishing points.
+    Vec3f infLine = constrainVec(intersection1.cross(intersection2));
+    
+    
+    // Generate affine rectification matrix
+    Mat affineTransform = Mat(3, 3, CV_32F, 0.0);
+    affineTransform.at<float>(0,0) = 1.0;
+    affineTransform.at<float>(1,1) = 1.0;
+    affineTransform.at<float>(2,0) = infLine[0];
+    affineTransform.at<float>(2,1) = infLine[1];
+    affineTransform.at<float>(2,2) = infLine[2];
+    
+    Mat mirror = Mat(3, 3, CV_32F, Scalar(0));
+    mirror.at<float>(0,0) = -1;
+    mirror.at<float>(1,1) = 1;
+    mirror.at<float>(2,2) = 1;
+    
+    vector<Point2f> in;
+    vector<Point2f> affinePoints;
+    for( int i = 0; i < inputLines.size(); i++){
+        in.push_back( Point2f( inputLines[i][0], inputLines[i][1]) );
+        in.push_back( Point2f( inputLines[i][2], inputLines[i][3]) );
+    }
+    
+    perspectiveTransform( in , affinePoints, affineTransform);
+    
+    vector<Vec3f> hmgLinesAff;
+    vector<Vec4f> affineLines;
+    for( int i = 0; i < affinePoints.size(); i += 2){
+        hmgLinesAff.push_back( constrainVec(Vec3f(affinePoints[i].x, affinePoints[i].y, 1).cross( Vec3f(affinePoints[i+1].x, affinePoints[i+1].y, 1) ) ));
+        affineLines.push_back( Vec4f{affinePoints[i].x, affinePoints[i].y, affinePoints[i+1].x, affinePoints[i+1].y });
+    }
+    
+    // Generate a constraint circle from a known angle between lines
+    float a = (-hmgLinesAff[4][1]) / hmgLinesAff[4][0]; // vert
+    float b = (-hmgLinesAff[0][1]) / hmgLinesAff[0][0]; // hori
+    float theta = CV_PI / 2;
+    
+    float ca = (a+b)/2 ;
+    float cb = ((a-b)/2) * cotan(theta);
+    float r = abs( (a-b) / (2 * sin(theta)) );
+    
+    
+    Vec3f intersectionLeft = constrainVec(hmgLinesAff[1].cross(hmgLinesAff[ hmgLinesAff.size()-1 ]));
+    Vec3f intersectionRight = constrainVec(hmgLinesAff[1].cross(hmgLinesAff[ hmgLinesAff.size()-2 ]));
+    Vec4f horizontalSegment = { intersectionLeft[0], intersectionLeft[1], intersectionRight[0], intersectionRight[1]};
+    
+    //Generate a constraint circle from known length ratio between two non parallel lines
+    float dx1 = affineLines[3][0] - affineLines[3][2];
+    float dy1 = affineLines[3][1] - affineLines[3][3];
+    
+    float dx2 = horizontalSegment[0] - horizontalSegment[2];
+    float dy2 = horizontalSegment[1] - horizontalSegment[3];
+    
+    float ratio = 6.36;
+    
+    float ca2 = ((dx1*dy1) - ((ratio*ratio)*dx2*dy2)) / ((dy1*dy1)-((ratio*ratio)*(dy2*dy2)));
+    float cb2 = 0;
+    float r2 = abs( (ratio*(dx2*dy1-dx1*dy2)) / ((dy1*dy1)-(ratio*ratio)*(dy2*dy2)) );
+    
+    
+    //Find where constraint circles intersect
+    Point2f inter = intersectTwoCircles(ca, cb, r, ca2, cb2, r2);
+    
+    // Generate metric rectification matrix
+    Mat metricTransform = Mat(3, 3, CV_32F, 0.0);
+    metricTransform.at<float>(0,0) = 1 / inter.y;
+    metricTransform.at<float>(0,1) = -(inter.x/inter.y);
+    metricTransform.at<float>(1,1) = 1.0;
+    metricTransform.at<float>(2,2) = 1.0;
+    
+    vector<Point2f> metricPoints;
+    perspectiveTransform( affinePoints, metricPoints, metricTransform);
+    
+    float avgX = 0;
+    float avgY = 0;
+    for( int i = 0; i < metricPoints.size(); i++){
+        avgX += metricPoints[i].x;
+        avgY += metricPoints[i].y;
+    }
+    avgX /= metricPoints.size();
+    avgY /= metricPoints.size();
+    
+    
+    Vec4f horizLine = Vec4f(metricPoints[0].x, metricPoints[0].y, metricPoints[1].x, metricPoints[1].y);
+    double angle = - getAngle(horizLine);
+    //angle = 0;
+    Mat rotationMat = getRotationMatrix2D(Point(avgX,avgY), angle, 1);
+    for( int i = 0; i < metricPoints.size(); i++){
+        Mat point;
+        Mat(metricPoints[i], CV_64F).convertTo(point, CV_64F);
+        point = point.t() * rotationMat;
+        metricPoints[i].x = point.at<double>(0);
+        metricPoints[i].y = point.at<double>(1);
+    }
+    
+    int end = (int) metricPoints.size() - 1;
+    if( (metricPoints[end].x+metricPoints[end-1].x)/2 > (metricPoints[4].x+metricPoints[5].x)/2 ){ // Final horizontal to to the right of first horizontal, order reversed.
+        if((metricPoints[2].y+metricPoints[3].y)/2 > (metricPoints[0].y+metricPoints[1].y)/2){ // line 1 below line 0
+            perspectiveTransform( metricPoints, metricPoints, mirror); // Mirrored rectification
+        } else {
+            float avgX = 0;
+            float avgY = 0;
+            for( int i = 0; i < metricPoints.size(); i++){
+                avgX += metricPoints[i].x;
+                avgY += metricPoints[i].y;
+            }
+            avgX /= metricPoints.size();
+            avgY /= metricPoints.size();
+            
+            Mat rotationMat = getRotationMatrix2D(Point(avgX,avgY), 180, 1);
+            for( int i = 0; i < metricPoints.size(); i++){
+                Mat point;
+                Mat(metricPoints[i], CV_64F).convertTo(point, CV_64F);
+                point = point.t() * rotationMat;
+                metricPoints[i].x = point.at<double>(0);
+                metricPoints[i].y = point.at<double>(1);
+            }
+        }
+    }
+    
+    if( (metricPoints[end].x+metricPoints[end-1].x)/2 < (metricPoints[4].x+metricPoints[5].x)/2 ){
+        if((metricPoints[2].y+metricPoints[3].y)/2 < (metricPoints[0].y+metricPoints[1].y)/2){
+            mirror.at<float>(0,0) = 1;
+            mirror.at<float>(1,1) = -1;
+            perspectiveTransform( metricPoints, metricPoints, mirror); // Mirrored on Y axis
+        }
+    }
+    
+    vector<Vec4f> outputLines;
+    for(int i = 0; i < metricPoints.size(); i += 2){
+        outputLines.push_back( Vec4f(metricPoints[i].x, metricPoints[i].y, metricPoints[i+1].x, metricPoints[i+1].y) );
+    }
+    
+    int xAdj = -metricPoints[1].x + 100;
+    int yAdj = -metricPoints[1].y + 100;
+    
+    for(int i = 0; i < metricPoints.size(); i += 2){
+        //line( finuks, Point(metricPoints[i].x + xAdj, metricPoints[i].y + yAdj), Point(metricPoints[i+1].x + xAdj, metricPoints[i+1].y + yAdj), Scalar(0,0,0), 5);
+    }
+    
+    return outputLines;
+}
+
 extern "C" int sendImage(uint8_t *&image, int& width, int& height, int& crop)
 {
     clock_t start, end;
@@ -504,10 +798,54 @@ extern "C" int sendImage(uint8_t *&image, int& width, int& height, int& crop)
         
         vector<Vec4f> rawLines = getLines();
         vector<Vec4f> lines = cleanLines(rawLines);
-
-        for( size_t i = 0; i < lines.size(); i++ )
+        vector<Vec4f> rectifiedLines = rectifyLines(lines);
+        
+        
+        float templateHeight = lineLength( templateLines[0] );
+        float rectifiedLinesHeight = lineLength(rectifiedLines[rectifiedLines.size() - 1]);
+        float diff = templateHeight/rectifiedLinesHeight;
+        cout << "diff: " << diff << endl;
+        
+        diff = 3;
+        Mat scaling = Mat(3, 3, CV_32F, Scalar(0));
+        scaling.at<float>(0,0) = diff;
+        scaling.at<float>(1,1) = diff;
+        scaling.at<float>(2,2) = 1;
+        
+        vector<Point2f> in2;
+        vector<Point2f> out2;
+        for( int i = 0; i < rectifiedLines.size(); i++){
+            in2.push_back( Point2f( rectifiedLines[i][0], rectifiedLines[i][1]) );
+            in2.push_back( Point2f( rectifiedLines[i][2], rectifiedLines[i][3]) );
+        }
+        
+        perspectiveTransform(in2, out2, scaling);
+        
+        vector<Vec4f> scaledLines;
+        for(int i = 0; i < out2.size(); i += 2){
+            scaledLines.push_back(Vec4f( out2[i].x, out2[i].y, out2[i+1].x, out2[i+1].y));
+        }
+        
+        rectifiedLines = scaledLines;
+        
+        Vec2f templateCenter = getCenter(templateLines[0]);
+        Vec2f rectifiedCenter = getCenter( rectifiedLines[ rectifiedLines.size() - 1]);
+        float xAdjust = rectifiedCenter[0] - templateCenter[0];
+        float yAdjust = rectifiedCenter[1] - templateCenter[1];
+        
+        for(int i = 0; i < rectifiedLines.size(); i++){
+            rectifiedLines[i][0] -= xAdjust;
+            rectifiedLines[i][1] -= yAdjust;
+            rectifiedLines[i][2] -= xAdjust;
+            rectifiedLines[i][3] -= yAdjust;
+        }
+        
+        
+        
+        
+        for( size_t i = 0; i < rectifiedLines.size(); i++ )
         {
-            Vec4f l = lines[i];
+            Vec4f l = rectifiedLines[i];
             line( lineOut, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(0,0,255), 2, 0);
         }
         
@@ -670,7 +1008,7 @@ extern "C" int sendImage(uint8_t *&image, int& width, int& height, int& crop)
     return 0;
 }
 
-
+// Pass an image mat back to Unity to be displayed as a texture
 extern "C" void GetRawImageBytes(unsigned char*& data, int& width, int& height)
 {
     //Resize Mat to match the array passed to it from C#
@@ -684,3 +1022,6 @@ extern "C" void GetRawImageBytes(unsigned char*& data, int& width, int& height)
         std::memcpy(data, argb_img.data, argb_img.total() * argb_img.elemSize());
     }
 }
+
+
+
