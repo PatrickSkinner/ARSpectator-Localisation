@@ -17,12 +17,17 @@
 using namespace cv;
 using namespace std;
 
+bool useRectification = true;
+bool manualSelection = false;
+
 Mat src;
 Mat HSV;
 Mat thresh;
 Mat finuks;
 
-String filename = "test3.png";
+String filename = "test.png";
+Point2f clickCoords = Point2f(640,900);
+int selectedLine = 1; // 0 = leftmost, 1 = center, 2 = rightmost
 
 class Match{
 public:
@@ -32,8 +37,8 @@ public:
     double dist;
     
     Match(){
-        l1 = NULL;
-        l2 = NULL;
+        l1 = NULL; // L1 is template
+        l2 = NULL; // L2 is detected line
         dist = 99999;
     }
     
@@ -61,65 +66,6 @@ Vec3f constrainVec(Vec3f in){
     } else {
         return in;
     }
-}
-
-
-
-/** for each L1, find the best matching L2 */
-vector<Match> getBestMatches(vector<Match> matches, vector<Vec4f> templateLines){
-    vector<Match> bestMatches;
-    
-    Match candidate;
-    for(int i = 0; i < matches.size(); i++){
-        if(matches[i].dist < candidate.dist){
-            if(matches[i].l1 == templateLines[0]) candidate = matches[i]; // find best match for leftmost template line
-        }
-    }
-    bestMatches.push_back(candidate);
-    
-    for(int i = 1; i < templateLines.size()-2; i++){
-        candidate = Match();
-        for(int j = 0; j < matches.size(); j++){
-            if(matches[j].dist < candidate.dist){
-                if(matches[j].l1 == templateLines[i]){
-                    if( getCenter(matches[j].l2)[0] > getCenter(bestMatches[i-1].l2)[0] ){ // Candidate match midpoint is to the right of previous matched line
-                        candidate = matches[j];
-                    }
-                }
-            }
-        }
-        bestMatches.push_back(candidate);
-    }
-    
-    candidate = Match();
-    for( int i = 0; i < matches.size(); i++){
-        bool flag = false;
-        if(matches[i].dist < candidate.dist){
-            for(int j = 0; j < bestMatches.size(); j++){
-                if( matches[i].l2 == bestMatches[j].l2){
-                    flag = true;
-                }
-            }
-            if(matches[i].l1 == templateLines[ templateLines.size()-2 ] && !flag) candidate = matches[i]; // find best match for top horizontal template line
-        }
-    }
-    bestMatches.push_back(candidate);
-    
-    candidate = Match();
-    for( int i = 0; i < matches.size(); i++){
-        bool flag = false;
-        if(matches[i].dist < candidate.dist){
-            for(int j = 0; j < bestMatches.size(); j++){
-                if( matches[i].l2 == bestMatches[j].l2){
-                    flag = true;
-                }
-            }
-            if(matches[i].l1 == templateLines[ templateLines.size()-1 ] && !flag) candidate = matches[i]; // find best match for bottom template line
-        }
-    }
-    bestMatches.push_back(candidate);
-    
-    return bestMatches;
 }
 
 /** Get gradient of given line */
@@ -199,6 +145,28 @@ float lineDistance(Vec4f line1, Vec4f line2){
     return min(    max( lineLength(ac),lineLength(bd)),     max( lineLength(ad),lineLength(bc))       );
 }
 
+/** Find the minimum distance between a point and a line segment */
+float minimum_distance(Vec4f line, Point2f p) {
+    Point2f v = Point2f(line[0], line[1]);
+    Point2f w = Point2f(line[2], line[3]);
+    // Return minimum distance between line segment vw and point p
+    float l2 = lineLength(line);
+    if (l2 == 0.0) return lineLength(Vec4f(p.x, p.y, v.x, v.y));   // v == w case
+    // Consider the line extending the segment, parameterized as v + t (w - v).
+    // We find projection of point p onto the line.
+    // It falls where t = [(p-v) . (w-v)] / |w-v|^2
+    // We clamp t from [0,1] to handle points outside the segment vw.
+    float inner = (p - v).dot(w - v);
+    float min = 1.0;
+    if( (inner/l2) < 1.0) min = inner/l2;
+    
+    float t = 0.0;
+    if( min > t) t = min;
+    
+    Point2f projection = v + t * (w - v);  // Projection falls on the segment
+    return lineLength( Vec4f(p.x,p.y,projection.x, projection.y));
+}
+
 /** Calculate the total Hausdorff distance between two line sets */
 float getSetDistance(vector<Vec4f> templateLines, vector<Vec4f> detectedLines){
     float totalDistance = 0.0;
@@ -250,6 +218,192 @@ Point2f intersectTwoCircles(float x1, float y1, float r1, float x2, float y2, fl
     // but that one solution will just be duplicated as the code is currently written
     
     return Point2f(ix2, iy2);
+}
+
+/** for each L1, find the best matching L2 */
+// int whichLine enumerates 0 = left, 1 = center, 2 = right. This describes which line the users has selected.
+vector<Match> getBestMatches(vector<Match> matches, vector<Vec4f> templateLines, Point2f clickCoords, int whichLine){
+    vector<Match> bestMatches;
+    
+    Mat debugMat = src.clone();
+    
+    /**
+            take click coordinate
+     find nearest line to coordinate
+            this is now the leftmost line with index n
+        matched to templateLines[n]
+     match left to right from n to templateLines.size
+            match right to left from n-1 to 0
+     */
+    
+    int closest = -1;
+    int closestDist = 9990;
+    for(int i = 0; i < matches.size(); i++){
+
+        if(minimum_distance(matches[i].l2, clickCoords) < closestDist){
+            closest = i;
+            closestDist = minimum_distance(matches[i].l2, clickCoords);
+        }
+    }
+    
+    line(debugMat, Point2f(matches[closest].l2[0], matches[closest].l2[1]), Point2f(matches[closest].l2[2], matches[closest].l2[3]), Scalar(0,255,0), 5);
+    line(debugMat, clickCoords, Point2f(getCenter(matches[closest].l2)[0], getCenter(matches[closest].l2)[1]), Scalar(0,255,0), 5);
+    cout << "Closest Index: " << closest << ",     Distance: " << closestDist << endl;
+    
+    
+    Match candidate;
+    
+    if(whichLine == 0){ // Matches start with leftmost line
+        int templateLine = 0; // Index of the leftmost line in the template.
+        
+        for(int i = 0; i < matches.size(); i++){
+            if(matches[i].dist < candidate.dist){
+                if(matches[i].l1 == templateLines[templateLine] && matches[i].l2 == matches[closest].l2) candidate = matches[i]; // find best match for leftmost template line
+            }
+        }
+
+        bestMatches.push_back(candidate);
+        
+        for(int i = templateLine+1; i < templateLines.size()-2; i++){
+            candidate = Match();
+            for(int j = 0; j < matches.size(); j++){
+                if(matches[j].dist < candidate.dist){
+                    if(matches[j].l1 == templateLines[i]){
+                        long lastMatch = bestMatches.size()-1;
+                        if( getCenter(matches[j].l2)[0] > getCenter(bestMatches[lastMatch].l2)[0] ){ // Candidate match midpoint is to the right of previous matched line
+                            candidate = matches[j];
+                        }
+                    }
+                }
+            }
+            bestMatches.push_back(candidate);
+        }
+    }
+    
+    if(whichLine == 1){ // Match from center to rightmost, then from leftmost back towards the center.
+        int templateLine = 1; // Index of the center line in the template.
+        
+        for(int i = 0; i < matches.size(); i++){
+            if(matches[i].dist < candidate.dist){
+                if(matches[i].l1 == templateLines[templateLine] && matches[i].l2 == matches[closest].l2) candidate = matches[i]; // find best match for center template line
+            }
+        }
+
+        bestMatches.push_back(candidate);
+        
+        for(int i = templateLine+1; i < templateLines.size()-2; i++){
+            candidate = Match();
+            for(int j = 0; j < matches.size(); j++){
+                if(matches[j].dist < candidate.dist){
+                    if(matches[j].l1 == templateLines[i]){
+                        long lastMatch = bestMatches.size()-1;
+                        if( getCenter(matches[j].l2)[0] > getCenter(bestMatches[lastMatch].l2)[0] ){ // Candidate match midpoint is to the right of previous matched line
+                         candidate = matches[j];
+                        }
+                    }
+                }
+            }
+            bestMatches.push_back(candidate);
+        }
+        
+        // Match leftmost line.
+        candidate = Match();
+        for(int j = 0; j < matches.size(); j++){
+            if(matches[j].dist < candidate.dist){
+                if(matches[j].l1 == templateLines[0]){
+                    if( getCenter(matches[j].l2)[0] < getCenter(bestMatches[0].l2)[0] ){ // Candidate match midpoint is to the left of center line
+                        candidate = matches[j];
+                    }
+                }
+            }
+        }
+        bestMatches.push_back(candidate);
+        
+        // Match lines between leftmost line and center line.
+        for(int i = 1; i < templateLine; i++){
+            candidate = Match();
+            for(int j = 0; j < matches.size(); j++){
+                if(matches[j].dist < candidate.dist){
+                    if(matches[j].l1 == templateLines[i]){
+                        long lastMatch = bestMatches.size()-1;
+                        if( getCenter(matches[j].l2)[0] > getCenter(bestMatches[lastMatch].l2)[0] && getCenter(matches[j].l2)[0] < getCenter(bestMatches[0].l2)[0]){
+                            // Candidate match midpoint is to the right of previous matched line and left of center line.
+                            candidate = matches[j];
+                        }
+                    }
+                }
+            }
+            bestMatches.push_back(candidate);
+        }
+    }
+    
+    
+    if(whichLine == 2){ // Matches start with rightmost line
+        int templateLine = 2; // Index of the rightmost line in the template.
+        
+        for(int i = 0; i < matches.size(); i++){
+            if(matches[i].dist < candidate.dist){
+                if(matches[i].l1 == templateLines[templateLine] && matches[i].l2 == matches[closest].l2) candidate = matches[i]; // find best match for rightmost template line
+            }
+        }
+
+        bestMatches.push_back(candidate);
+        
+        for(int i = templateLine-1; i >= 0; i--){
+            candidate = Match();
+            for(int j = 0; j < matches.size(); j++){
+                if(matches[j].dist < candidate.dist){
+                    if(matches[j].l1 == templateLines[i]){
+                        long lastMatch = bestMatches.size()-1;
+                        if( getCenter(matches[j].l2)[0] < getCenter(bestMatches[lastMatch].l2)[0] ){ // Candidate match midpoint is to the left of previous matched line
+                            candidate = matches[j];
+                        }
+                    }
+                }
+            }
+            bestMatches.push_back(candidate);
+        }
+
+    }
+    
+    
+    
+    
+    
+    
+    
+    candidate = Match();
+    for( int i = 0; i < matches.size(); i++){
+        bool flag = false;
+        if(matches[i].dist < candidate.dist){
+            for(int j = 0; j < bestMatches.size(); j++){
+                if( matches[i].l2 == bestMatches[j].l2){
+                    flag = true;
+                }
+            }
+            if(matches[i].l1 == templateLines[ templateLines.size()-2 ] && !flag) candidate = matches[i]; // find best match for top horizontal template line
+        }
+    }
+    bestMatches.push_back(candidate);
+    
+    candidate = Match();
+    for( int i = 0; i < matches.size(); i++){
+        bool flag = false;
+        if(matches[i].dist < candidate.dist){
+            for(int j = 0; j < bestMatches.size(); j++){
+                if( matches[i].l2 == bestMatches[j].l2){
+                    flag = true;
+                }
+            }
+            if(matches[i].l1 == templateLines[ templateLines.size()-1 ] && !flag) candidate = matches[i]; // find best match for bottom template line
+        }
+    }
+    bestMatches.push_back(candidate);
+    
+    cout << "HOW MANY MATCHES????     " << bestMatches.size() << endl;
+    imshow("DEEEEEBUUUUUG", debugMat);
+    
+    return bestMatches;
 }
 
 extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
@@ -325,8 +479,8 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
             */
             
             Point2f p = Point2f(inputLines[i][0] + steps , y);
-            line( src, Point(inputLines[0][0], inputLines[0][1]), Point(inputLines[0][2], inputLines[0][3]), Scalar(200,0,255), 10, 0);
-            line( src, Point( p.x - 7, p.y), Point( p.x + 7, p.y), Scalar(255,255,255), 5, 0);
+            //line( src, Point(inputLines[0][0], inputLines[0][1]), Point(inputLines[0][2], inputLines[0][3]), Scalar(200,0,255), 10, 0);
+            //line( src, Point( p.x - 7, p.y), Point( p.x + 7, p.y), Scalar(255,255,255), 5, 0);
             
             //cout << "POINT P: " << p << endl << endl;
             
@@ -359,8 +513,8 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
             */
             
             Point2f p = Point2f(x, inputLines[i][1] + steps);
-            line( src, Point(inputLines[0][0], inputLines[0][1]), Point(inputLines[0][2], inputLines[0][3]), Scalar(200,0,255), 10, 0);
-            line( src, Point( p.x, p.y-9), Point( p.x, p.y+9), Scalar(255,255,255), 5, 0);
+            //line( src, Point(inputLines[0][0], inputLines[0][1]), Point(inputLines[0][2], inputLines[0][3]), Scalar(200,0,255), 10, 0);
+            //line( src, Point( p.x, p.y-9), Point( p.x, p.y+9), Scalar(255,255,255), 5, 0);
             
             distAtX = abs( lineLength( Vec4f(compare.x, compare.y, p.x, p.y )));
             
@@ -762,6 +916,8 @@ vector<Vec4f> rectifyLines(vector<Vec4f> inputLines){
         outputLines.push_back( Vec4f(metricPoints[i].x, metricPoints[i].y, metricPoints[i+1].x, metricPoints[i+1].y) );
     }
     
+    
+    // Place rectified lines within frame for debug output;
     int xAdj = -metricPoints[1].x + 100;
     int yAdj = -metricPoints[1].y + 100;
     
@@ -807,8 +963,14 @@ int main( int argc, char** argv){
     vector<Vec4f> templateLines {Vec4f(0,0,0,2800), Vec4f(440,0,440,2800), Vec4f(1400,0,1400,2800), Vec4f(0,0,5400,0), Vec4f(0,2800,5400,2800)};
     
     vector<Vec4f> lines = cleanLines(rawLines);
-    vector<Vec4f> rectifiedLines = rectifyLines(lines);
-    //vector<Vec4f> rectifiedLines = lines;
+    
+    vector<Vec4f> rectifiedLines;
+    
+    if(useRectification){
+        rectifiedLines = rectifyLines(lines);
+    } else {
+        rectifiedLines = lines;
+    }
     
     for( size_t i = 0; i < lines.size(); i++ )
     {
@@ -863,10 +1025,22 @@ int main( int argc, char** argv){
     
     
     
+    // Align template with rectified lines
+    Vec2f templateCenter;
+    Vec2f rectifiedCenter;
     
+    if(selectedLine == 0){ // leftmost
+        templateCenter = getCenter(templateLines[0]);
+        rectifiedCenter = getCenter( rectifiedLines[ rectifiedLines.size() - 1]);
+    } else if (selectedLine == 1){ // center line
+        templateCenter = getCenter(templateLines[1]);
+        rectifiedCenter = getCenter( rectifiedLines[3]);
+        
+    } else if (selectedLine == 2){ // rightmost line
+            templateCenter = getCenter(templateLines[2]);
+            rectifiedCenter = getCenter( rectifiedLines[2]);
+    }
     
-    Vec2f templateCenter = getCenter(templateLines[0]);
-    Vec2f rectifiedCenter = getCenter( rectifiedLines[ rectifiedLines.size() - 1]);
     float xAdjust = rectifiedCenter[0] - templateCenter[0];
     float yAdjust = rectifiedCenter[1] - templateCenter[1];
     
@@ -878,7 +1052,8 @@ int main( int argc, char** argv){
     }
     
     for(int i = 0; i < rectifiedLines.size(); i++){
-        //line( src, Point(rectifiedLines[i][0], rectifiedLines[i][1]), Point(rectifiedLines[i][2], rectifiedLines[i][3]), Scalar(0,255,100), 2, 0);
+        line( src, Point(rectifiedLines[i][0], rectifiedLines[i][1]), Point(rectifiedLines[i][2], rectifiedLines[i][3]), Scalar(0,255,100), 2, 0);
+        line( src, Point(templateLines[i][0], templateLines[i][1]), Point(templateLines[i][2], templateLines[i][3]), Scalar(0,255,200), 2, 0);
     }
     
     // Record each possible match
@@ -895,7 +1070,8 @@ int main( int argc, char** argv){
     }
     
     sort(matches.begin(), matches.end(), compareMatches);
-    vector<Match> bestMatches = getBestMatches(matches, templateLines);
+    vector<Match> bestMatches = getBestMatches(matches, templateLines, clickCoords, selectedLine);
+    cout << "size still: " << bestMatches.size() << endl;
     
     vector<Vec3f> templateH = vector<Vec3f>(templateLines.size());;
     vector<Vec3f> matchedH = vector<Vec3f>(templateLines.size());;
@@ -971,7 +1147,11 @@ int main( int argc, char** argv){
     
     Mat warp = src.clone();
     
-    for(int i = 0; i < templateH.size(); i++)
+    
+    cout << "TEMPLATE H SIZE: " << templateH.size() << endl;
+    cout << "BestMatchesSIZE: " << bestMatches.size() << endl;
+    
+    for(int i = 0; i < bestMatches.size(); i++)
     {
         line( warp, Point(bestMatches[i].l1[0], bestMatches[i].l1[1]), Point(bestMatches[i].l1[2], bestMatches[i].l1[3]), Scalar(0,255,255), 2, 0);
         line( warp, Point(bestMatches[i].l2[0], bestMatches[i].l2[1]), Point(bestMatches[i].l2[2], bestMatches[i].l2[3]), Scalar(255,0,255), 2, 0);
