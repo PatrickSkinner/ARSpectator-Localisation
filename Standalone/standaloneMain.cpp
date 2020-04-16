@@ -146,26 +146,17 @@ float lineDistance(Vec4f line1, Vec4f line2){
     return min(    max( lineLength(ac),lineLength(bd)),     max( lineLength(ad),lineLength(bc))       );
 }
 
-/** Find the minimum distance between a point and a line segment */
-float minimum_distance(Vec4f line, Point2f p) {
-    Point2f v = Point2f(line[0], line[1]);
-    Point2f w = Point2f(line[2], line[3]);
-    // Return minimum distance between line segment vw and point p
-    float l2 = lineLength(line);
-    if (l2 == 0.0) return lineLength(Vec4f(p.x, p.y, v.x, v.y));   // v == w case
-    // Consider the line extending the segment, parameterized as v + t (w - v).
-    // We find projection of point p onto the line.
-    // It falls where t = [(p-v) . (w-v)] / |w-v|^2
-    // We clamp t from [0,1] to handle points outside the segment vw.
-    float inner = (p - v).dot(w - v);
-    float min = 1.0;
-    if( (inner/l2) < 1.0) min = inner/l2;
+/** Find the minimum distance between a point and a line  */
+float minimum_distance(Vec4f lineIn, Point2f p) {
+    float x1 = lineIn[0];
+    float y1 = lineIn[1];
+    float x2 = lineIn[2];
+    float y2 = lineIn[3];
     
-    float t = 0.0;
-    if( min > t) t = min;
+    float a = abs( (y2-y1)*p.x - (x2-x1)*p.y + x2*y1 - y2*x1);
+    float b = sqrt( ((y2-y1)*(y2-y1)) + ((x2-x1)*(x2-x1)) );
     
-    Point2f projection = v + t * (w - v);  // Projection falls on the segment
-    return lineLength( Vec4f(p.x,p.y,projection.x, projection.y));
+    return a/b;
 }
 
 /** Calculate the total Hausdorff distance between two line sets */
