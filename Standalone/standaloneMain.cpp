@@ -28,6 +28,7 @@ Mat finuks;
 String filename = "test.png";
 Point2f clickCoords = Point2f(640,900);
 int selectedLine = 1; // 0 = leftmost, 1 = center, 2 = rightmost
+bool guiMode = true;
 
 class Match{
 public:
@@ -941,11 +942,30 @@ vector<Vec4f> rectifyLines(vector<Vec4f> inputLines){
     return outputLines;
 }
 
-////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////
-//////////////                MAIN METHOD                 //////////////
-////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////
+/** Update clickCoords. Left, middle, and right mouse buttons correspond to the chosen pitch line. */
+void onMouse( int event, int x, int y, int, void* )
+{
+    clickCoords = Point2f(x, y);
+    
+    if  ( event == EVENT_LBUTTONDOWN )
+    {
+        selectedLine = 0;
+    }
+    else if  ( event == EVENT_MBUTTONDOWN )
+    {
+         selectedLine = 1;
+    }
+    else if  ( event == EVENT_RBUTTONDOWN )
+    {
+         selectedLine = 2;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////
+//////////////                MAIN METHOD              //////////////
+///////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////
 
 
 int main( int argc, char** argv){
@@ -957,6 +977,16 @@ int main( int argc, char** argv){
     src = imread(filename);
     Mat finale = src.clone();
     finuks = src.clone();
+    
+    while(!src.data){
+        cout << "." << endl;
+    }
+    
+    if(guiMode){
+        imshow("Select a Line.", src);
+        setMouseCallback( "Select a Line.", onMouse, 0 );
+        waitKey();
+    }
     
     vector<Vec4f> rawLines = getLines();
     //vector<Vec4f> templateLines {Vec4f(0,0,0,800), Vec4f(430,0,430,800), Vec4f(1440,0,1440,800), Vec4f(0,0,1440,0), Vec4f(0,800,1440,800)};
@@ -991,10 +1021,6 @@ int main( int argc, char** argv){
         templateLines[i][1] += 150;
         templateLines[i][3] += 150;
     }
-    
-    
-    
-    
     
     float templateHeight = lineLength( templateLines[0] );
     float rectifiedLinesHeight = lineLength(rectifiedLines[rectifiedLines.size() - 1]);
