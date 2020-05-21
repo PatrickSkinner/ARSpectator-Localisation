@@ -19,13 +19,14 @@ using namespace std;
 
 bool useRectification = true;
 bool manualSelection = false;
+bool useMask = true;
 
 Mat src;
 Mat HSV;
 Mat thresh;
 Mat finuks;
 
-String filename = "test.png";
+String filename = "stadiumRender.png";
 Point2f clickCoords = Point2f(640,900);
 int selectedLine = 1; // 0 = leftmost, 1 = center, 2 = rightmost
 bool guiMode = true;
@@ -216,17 +217,7 @@ Point2f intersectTwoCircles(float x1, float y1, float r1, float x2, float y2, fl
 // int whichLine enumerates 0 = left, 1 = center, 2 = right. This describes which line the users has selected.
 vector<Match> getBestMatches(vector<Match> matches, vector<Vec4f> templateLines, Point2f clickCoords, int whichLine){
     vector<Match> bestMatches;
-    
     Mat debugMat = src.clone();
-    
-    /**
-            take click coordinate
-     find nearest line to coordinate
-            this is now the leftmost line with index n
-        matched to templateLines[n]
-     match left to right from n to templateLines.size
-            match right to left from n-1 to 0
-     */
     
     int closest = -1;
     int closestDist = 9990;
@@ -447,7 +438,6 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
     //avgAngle = ang;
     */
     
-    
     avgX = 0;
     avgY = 0;
     avgAngle = 0;
@@ -540,6 +530,19 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
     return Vec4f(avgX - len, avgY - (len*grad), avgX + len, avgY + (len*grad));
 }
 
+int getMaxAreaContourId(vector <vector<cv::Point>> contours) {
+    double maxArea = 0;
+    int maxAreaContourId = -1;
+    for (int j = 0; j < contours.size(); j++) {
+        double newArea = cv::contourArea(contours.at(j));
+        if (newArea > maxArea) {
+            maxArea = newArea;
+            maxAreaContourId = j;
+        } // End if
+    } // End for
+    return maxAreaContourId;
+} // End function
+
 /** Return vector of all detected Hough lines in given image */
 vector<Vec4f> getLines()
 {
@@ -550,9 +553,31 @@ vector<Vec4f> getLines()
     cvtColor(src, HSV, COLOR_BGR2HSV);
     // Detect the field based on HSV Range Values
     //inRange(HSV, Scalar(20, 10, 50), Scalar(45, 255, 255), thresh);
-    inRange(HSV, Scalar(32, 124, 51), Scalar(46, 255, 191), thresh); // Stadium Test Pics
+    //inRange(HSV, Scalar(32, 124, 51), Scalar(46, 255, 191), thresh); // Stadium Test Pics
+    //inRange(HSV, Scalar(27, 86, 2), Scalar(85, 255, 145), thresh);
+    inRange(HSV, Scalar(31, 49, 70), Scalar(66, 219, 197), thresh); // renders
+    
     
     imshow("thresh af", thresh);
+    
+    // opening and closing
+    if(useMask){
+        Mat opened;
+        Mat closed;
+        Mat kernel = Mat(2, 2, CV_8U, Scalar(1));
+        morphologyEx(thresh, opened, MORPH_OPEN, kernel);
+        morphologyEx(opened, closed, MORPH_CLOSE, kernel);
+        //imshow("MORPH OPS", closed);
+        vector<vector<cv::Point> > contours;
+        findContours(thresh, contours, RETR_TREE, CHAIN_APPROX_SIMPLE);
+        Mat cont;
+        cvtColor(closed, cont, COLOR_GRAY2BGR);
+        
+        Mat mask = Mat::ones( thresh.rows, thresh.cols, CV_8U);
+        drawContours(mask, contours, getMaxAreaContourId(contours), Scalar(255,255,255), -1);
+        //imshow("cont", mask);
+        thresh = mask;
+    }
     
     Mat dst, invdst, cdst;
     GaussianBlur( thresh, invdst, Size( 5, 5 ), 0, 0 );
@@ -560,7 +585,7 @@ vector<Vec4f> getLines()
     cvtColor(dst, cdst, COLOR_GRAY2BGR);
     
     vector<Vec4f> lines;
-    HoughLinesP(dst, lines, 2, CV_PI/360, 350, 250, 45 );
+    HoughLinesP(dst, lines, 2, CV_PI/360, 350, 300, 45 );
     
     for(int i = 0; i < lines.size(); i++ ) line( cdst, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(255,0,0), 3, 0);
     imshow("Lines", cdst);
@@ -636,7 +661,7 @@ vector<Vec4f> cleanLines(vector<Vec4f> lines){
     vector<Vec4f> sortedLines = lines;
     vector<int> sortedAngles;
     
-    int threshold = 10;
+    int threshold = 10; // Minimum angle difference between clusters
     
     float centroidX = 0.0;
     float centroidY = 0.0;
@@ -648,7 +673,7 @@ vector<Vec4f> cleanLines(vector<Vec4f> lines){
     for(int i = 0; i < sortedLines.size(); i++ ){
         float angle = getAngle(sortedLines[i]);
 
-        if( (angle - startAngle) < threshold){
+        if( abs(angle - startAngle) < threshold){
             sortedAngles.push_back(label);
         } else {
             label++;
@@ -923,12 +948,12 @@ vector<Vec4f> rectifyLines(vector<Vec4f> inputLines){
     Mat constraints = Mat(500, 500, CV_8UC1, Scalar(255,255,255));
     
     // Draw axes
-    line( constraints, Point(0, 250), Point(500, 250), Scalar(0,0,128));
-    line( constraints, Point(250, 0), Point(250, 500), Scalar(0,0,128));
+    //line( constraints, Point(0, 250), Point(500, 250), Scalar(0,0,128));
+    //line( constraints, Point(250, 0), Point(250, 500), Scalar(0,0,128));
     
-    circle(constraints, Point(ca+250 ,cb + 250), r, Scalar(0,255,0));
-    circle(constraints, Point(ca2+250 ,cb2 + 250), r2, Scalar(0,255,0));
-    imshow("constraints", constraints);
+    //circle(constraints, Point(ca+250 ,cb + 250), r, Scalar(0,255,0));
+    //circle(constraints, Point(ca2+250 ,cb2 + 250), r2, Scalar(0,255,0));
+    //imshow("constraints", constraints);
     
     return outputLines;
 }
