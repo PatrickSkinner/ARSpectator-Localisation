@@ -20,13 +20,14 @@ using namespace std;
 bool useRectification = true;
 bool manualSelection = false;
 bool useMask = true;
+bool mirrorInput = true;
 
 Mat src;
 Mat HSV;
 Mat thresh;
 Mat finuks;
 
-String filename = "stadiumRender.png";
+String filename = "stadiumRender5d.png";
 Point2f clickCoords = Point2f(640,900);
 int selectedLine = 1; // 0 = leftmost, 1 = center, 2 = rightmost
 bool guiMode = true;
@@ -555,7 +556,7 @@ vector<Vec4f> getLines()
     //inRange(HSV, Scalar(20, 10, 50), Scalar(45, 255, 255), thresh);
     //inRange(HSV, Scalar(32, 124, 51), Scalar(46, 255, 191), thresh); // Stadium Test Pics
     //inRange(HSV, Scalar(27, 86, 2), Scalar(85, 255, 145), thresh);
-    inRange(HSV, Scalar(31, 49, 70), Scalar(66, 219, 197), thresh); // renders
+    inRange(HSV, Scalar(31, 81, 70), Scalar(66, 219, 197), thresh); // renders
     
     
     imshow("thresh af", thresh);
@@ -567,15 +568,20 @@ vector<Vec4f> getLines()
         Mat kernel = Mat(2, 2, CV_8U, Scalar(1));
         morphologyEx(thresh, opened, MORPH_OPEN, kernel);
         morphologyEx(opened, closed, MORPH_CLOSE, kernel);
-        //imshow("MORPH OPS", closed);
+        imshow("MORPH OPS", opened);
         vector<vector<cv::Point> > contours;
-        findContours(thresh, contours, RETR_TREE, CHAIN_APPROX_SIMPLE);
+        findContours(opened, contours, RETR_TREE, CHAIN_APPROX_SIMPLE);
         Mat cont;
         cvtColor(closed, cont, COLOR_GRAY2BGR);
         
         Mat mask = Mat::ones( thresh.rows, thresh.cols, CV_8U);
-        drawContours(mask, contours, getMaxAreaContourId(contours), Scalar(255,255,255), -1);
-        //imshow("cont", mask);
+        //drawContours(mask, contours, getMaxAreaContourId(contours), Scalar(255,255,255), -1);
+        for( int i = 0; i < contours.size(); i++){
+            if(contourArea(contours[i]) > 300){
+                drawContours(mask, contours, i, Scalar(255,0,255), -1);
+            }
+        }
+        imshow("cont", mask);
         thresh = mask;
     }
     
@@ -585,7 +591,7 @@ vector<Vec4f> getLines()
     cvtColor(dst, cdst, COLOR_GRAY2BGR);
     
     vector<Vec4f> lines;
-    HoughLinesP(dst, lines, 2, CV_PI/360, 350, 300, 45 );
+    HoughLinesP(dst, lines, 2, CV_PI/360, 200, 300, 45 );
     
     for(int i = 0; i < lines.size(); i++ ) line( cdst, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(255,0,0), 3, 0);
     imshow("Lines", cdst);
@@ -661,7 +667,7 @@ vector<Vec4f> cleanLines(vector<Vec4f> lines){
     vector<Vec4f> sortedLines = lines;
     vector<int> sortedAngles;
     
-    int threshold = 10; // Minimum angle difference between clusters
+    int threshold = 7; // Minimum angle difference between clusters
     
     float centroidX = 0.0;
     float centroidY = 0.0;
@@ -991,6 +997,7 @@ int main( int argc, char** argv){
     start = clock();
     
     src = imread(filename);
+    //(src, src, +1);
     Mat finale = src.clone();
     finuks = src.clone();
     
