@@ -27,9 +27,9 @@ Mat HSV;
 Mat thresh;
 Mat finuks;
 
-String filename = "stadiumRender5d.png";
+String filename = "stadiumRender.png";
 Point2f clickCoords = Point2f(640,900);
-int selectedLine = 1; // 0 = leftmost, 1 = center, 2 = rightmost
+int selectedLine = 0; // 0 = leftmost, 1 = center, 2 = rightmost
 bool guiMode = true;
 
 class Match{
@@ -218,7 +218,7 @@ Point2f intersectTwoCircles(float x1, float y1, float r1, float x2, float y2, fl
 // int whichLine enumerates 0 = left, 1 = center, 2 = right. This describes which line the users has selected.
 vector<Match> getBestMatches(vector<Match> matches, vector<Vec4f> templateLines, Point2f clickCoords, int whichLine){
     vector<Match> bestMatches;
-    Mat debugMat = src.clone();
+    //Mat debugMat = src.clone();
     
     int closest = -1;
     int closestDist = 9990;
@@ -230,8 +230,8 @@ vector<Match> getBestMatches(vector<Match> matches, vector<Vec4f> templateLines,
         }
     }
     
-    line(debugMat, Point2f(matches[closest].l2[0], matches[closest].l2[1]), Point2f(matches[closest].l2[2], matches[closest].l2[3]), Scalar(0,255,0), 5);
-    line(debugMat, clickCoords, Point2f(getCenter(matches[closest].l2)[0], getCenter(matches[closest].l2)[1]), Scalar(0,255,0), 5);
+    //line(debugMat, Point2f(matches[closest].l2[0], matches[closest].l2[1]), Point2f(matches[closest].l2[2], matches[closest].l2[3]), Scalar(0,255,0), 5);
+    //line(debugMat, clickCoords, Point2f(getCenter(matches[closest].l2)[0], getCenter(matches[closest].l2)[1]), Scalar(0,255,0), 5);
     cout << "Closest Index: " << closest << ",     Distance: " << closestDist << endl;
     
     
@@ -385,7 +385,7 @@ vector<Match> getBestMatches(vector<Match> matches, vector<Vec4f> templateLines,
     bestMatches.push_back(candidate);
     
     cout << "HOW MANY MATCHES????     " << bestMatches.size() << endl;
-    imshow("DEEEEEBUUUUUG", debugMat);
+    //imshow("DEEEEEBUUUUUG", debugMat);
     
     return bestMatches;
 }
@@ -409,10 +409,20 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
         double angle = 0;
         angle = atan2( ( inputLines[i][3] - inputLines[i][1] ), ( inputLines[i][2] - inputLines[i][0] ) );
         avgAngle += angle;
-        
+        /*
+        float dist;
+        if(abs(getGradient(inputLines[i])) > 1){
+            dist = abs(getCenter(inputLines[i])[1] - center[1]);
+        } else {
+            dist = abs(getCenter(inputLines[i])[0] - center[0]);
+        }
+            
+            */
+            
+            
         //float dist = abs( lineLength( Vec4f(getCenter(inputLines[i])[0], getCenter(inputLines[i])[1], center[0], center[1] )));
-        
         float dist = abs(getCenter(inputLines[i])[1] - center[1]);
+        
         if( dist < closestDist ){
             closestDist = dist;
             x = getCenter(inputLines[i])[0];
@@ -577,7 +587,7 @@ vector<Vec4f> getLines()
         Mat mask = Mat::ones( thresh.rows, thresh.cols, CV_8U);
         //drawContours(mask, contours, getMaxAreaContourId(contours), Scalar(255,255,255), -1);
         for( int i = 0; i < contours.size(); i++){
-            if(contourArea(contours[i]) > 300){
+            if(contourArea(contours[i]) > 2000){
                 drawContours(mask, contours, i, Scalar(255,0,255), -1);
             }
         }
@@ -997,7 +1007,7 @@ int main( int argc, char** argv){
     start = clock();
     
     src = imread(filename);
-    //(src, src, +1);
+    if(mirrorInput) flip(src, src, +1);
     Mat finale = src.clone();
     finuks = src.clone();
     
@@ -1013,8 +1023,15 @@ int main( int argc, char** argv){
     
     vector<Vec4f> rawLines = getLines();
     //vector<Vec4f> templateLines {Vec4f(0,0,0,800), Vec4f(430,0,430,800), Vec4f(1440,0,1440,800), Vec4f(0,0,1440,0), Vec4f(0,800,1440,800)};
-    vector<Vec4f> templateLines {Vec4f(0,0,0,2800), Vec4f(440,0,440,2800), Vec4f(1400,0,1400,2800), Vec4f(0,0,5400,0), Vec4f(0,2800,5400,2800)};
+    vector<Vec4f> templateLines;// {Vec4f(0,0,0,2800), Vec4f(440,0,440,2800), Vec4f(1400,0,1400,2800), Vec4f(0,0,5400,0), Vec4f(0,2800,5400,2800)};;
     
+    if(selectedLine == 0){
+        templateLines = {Vec4f(0,0,0,2800), Vec4f(440,0,440,2800), Vec4f(1400,0,1400,2800), Vec4f(0,0,5400,0), Vec4f(0,2800,5400,2800)};
+    } else if(selectedLine == 1){
+       templateLines = {Vec4f(0,0,0,2800), Vec4f(440,0,440,2800), Vec4f(1400,0,1400,2800), Vec4f(0,0,5400,0), Vec4f(0,2800,5400,2800)};
+    } else if(selectedLine == 2){
+        templateLines = {Vec4f(0,0,0,2800), Vec4f(960,0,960,2800), Vec4f(1400,0,1400,2800), Vec4f(0,0,1400,0), Vec4f(0,2800,1400,2800)};
+    }
     vector<Vec4f> lines = cleanLines(rawLines);
     
     vector<Vec4f> rectifiedLines;
@@ -1101,8 +1118,8 @@ int main( int argc, char** argv){
     }
     
     for(int i = 0; i < rectifiedLines.size(); i++){
-        line( src, Point(rectifiedLines[i][0], rectifiedLines[i][1]), Point(rectifiedLines[i][2], rectifiedLines[i][3]), Scalar(0,255,100), 2, 0);
-        line( src, Point(templateLines[i][0], templateLines[i][1]), Point(templateLines[i][2], templateLines[i][3]), Scalar(0,255,200), 2, 0);
+        //line( src, Point(rectifiedLines[i][0], rectifiedLines[i][1]), Point(rectifiedLines[i][2], rectifiedLines[i][3]), Scalar(0,255,100), 2, 0);
+        //line( src, Point(templateLines[i][0], templateLines[i][1]), Point(templateLines[i][2], templateLines[i][3]), Scalar(0,255,200), 2, 0);
     }
     
     // Record each possible match
