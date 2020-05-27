@@ -20,7 +20,7 @@ using namespace std;
 bool useRectification = true;
 bool manualSelection = false;
 bool useMask = true;
-bool mirrorInput = true;
+bool mirrorInput = false;
 
 Mat src;
 Mat HSV;
@@ -181,6 +181,18 @@ float getSetDistance(vector<Vec4f> templateLines, vector<Vec4f> detectedLines){
     }
     
     return totalDistance;
+}
+
+/** Find intersection point of two lines */
+Vec3f intersect(Vec3f a, Vec3f b){
+    return constrainVec( a.cross(b) );
+}
+
+/** Find intersection point of two lines */
+Vec3f intersect(Vec4f a, Vec4f b){
+    Vec3f aH = Vec3f(a[0], a[1], 1).cross( Vec3f(a[2], a[3], 1 ) );
+    Vec3f bH = Vec3f(b[0], b[1], 1).cross( Vec3f(b[2], b[3], 1 ) );
+    return intersect(aH, bH);
 }
 
 /** Find intersection point of two circles, code from jupdike on Github */
@@ -351,11 +363,7 @@ vector<Match> getBestMatches(vector<Match> matches, vector<Vec4f> templateLines,
     }
     
     
-    
-    
-    
-    
-    
+
     candidate = Match();
     for( int i = 0; i < matches.size(); i++){
         bool flag = false;
@@ -409,19 +417,23 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
         double angle = 0;
         angle = atan2( ( inputLines[i][3] - inputLines[i][1] ), ( inputLines[i][2] - inputLines[i][0] ) );
         avgAngle += angle;
-        /*
+        
+        float checkAng = angle*(180/CV_PI);
+        if(checkAng < 0) checkAng += 180;
         float dist;
-        if(abs(getGradient(inputLines[i])) > 1){
-            dist = abs(getCenter(inputLines[i])[1] - center[1]);
+        if(checkAng >= 45 && checkAng <= 160){
+            Vec4f horiz = Vec4f( center[0]-100, center[1], center[0]+100, center[1]);
+            dist = abs(intersect(inputLines[i], horiz)[0] - center[0]);
+            //dist = abs(getCenter(inputLines[i])[0] - center[0]);
         } else {
-            dist = abs(getCenter(inputLines[i])[0] - center[0]);
+            Vec4f vert = Vec4f( center[0], center[1]-100, center[0], center[1]+100);
+            dist = abs(intersect(inputLines[i], vert)[1] - center[1]);
+            //dist = abs(getCenter(inputLines[i])[1] - center[1]);
         }
-            
-            */
             
             
         //float dist = abs( lineLength( Vec4f(getCenter(inputLines[i])[0], getCenter(inputLines[i])[1], center[0], center[1] )));
-        float dist = abs(getCenter(inputLines[i])[1] - center[1]);
+        //float dist = abs(getCenter(inputLines[i])[1] - center[1]);
         
         if( dist < closestDist ){
             closestDist = dist;
@@ -601,7 +613,7 @@ vector<Vec4f> getLines()
     cvtColor(dst, cdst, COLOR_GRAY2BGR);
     
     vector<Vec4f> lines;
-    HoughLinesP(dst, lines, 2, CV_PI/360, 200, 300, 45 );
+    HoughLinesP(dst, lines, 2, CV_PI/360, 150, 275, 45 );
     
     for(int i = 0; i < lines.size(); i++ ) line( cdst, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(255,0,0), 3, 0);
     imshow("Lines", cdst);
@@ -623,7 +635,7 @@ vector<int> splitHorizontals( vector<Vec4f> lines ){
     
     y1 /= lines.size();
     y2 /= lines.size();
-    float avgY = (y1+y2)/2;
+    float avgY = (y1+y2)/2 - 150;
     
     //cout << "Y threshold: " << avgY<< endl;
     for(int i = 0; i < lines.size(); i++){
@@ -635,10 +647,6 @@ vector<int> splitHorizontals( vector<Vec4f> lines ){
     }
     
     return labels;
-}
-
-Vec3f intersect(Vec3f a, Vec3f b){
-    return constrainVec( a.cross(b) );
 }
 
 vector<Vec4f> trimLines(vector<Vec4f> inputLines){
@@ -1067,7 +1075,8 @@ int main( int argc, char** argv){
     float diff = templateHeight/rectifiedLinesHeight;
     cout << "diff: " << diff << endl;
     
-    diff = 3;
+    //diff = 3;
+    diff = 1080/rectifiedLinesHeight;
     Mat scaling = Mat(3, 3, CV_32F, Scalar(0));
     scaling.at<float>(0,0) = diff;
     scaling.at<float>(1,1) = diff;
@@ -1095,16 +1104,26 @@ int main( int argc, char** argv){
     Vec2f templateCenter;
     Vec2f rectifiedCenter;
     
+    int closest = -1;
+    float closestDist = -1;
+    for(int i = 0; i < lines.size(); i++){
+        if(minimum_distance(lines[i], clickCoords) < closestDist || closestDist == -1){
+            closest = i;
+            closestDist = minimum_distance(lines[i], clickCoords);
+        }
+    }
+    
+    rectifiedCenter = getCenter( rectifiedLines[closest]);
     if(selectedLine == 0){ // leftmost
         templateCenter = getCenter(templateLines[0]);
-        rectifiedCenter = getCenter( rectifiedLines[ rectifiedLines.size() - 1]);
+        //rectifiedCenter = getCenter( rectifiedLines[ rectifiedLines.size() - 1]);
     } else if (selectedLine == 1){ // center line
         templateCenter = getCenter(templateLines[1]);
-        rectifiedCenter = getCenter( rectifiedLines[3]);
+        //rectifiedCenter = getCenter( rectifiedLines[3]);
         
     } else if (selectedLine == 2){ // rightmost line
-            templateCenter = getCenter(templateLines[2]);
-            rectifiedCenter = getCenter( rectifiedLines[2]);
+        templateCenter = getCenter(templateLines[2]);
+        //rectifiedCenter = getCenter( rectifiedLines[2]);
     }
     
     float xAdjust = rectifiedCenter[0] - templateCenter[0];
@@ -1117,10 +1136,12 @@ int main( int argc, char** argv){
         rectifiedLines[i][3] -= yAdjust;
     }
     
+    /*
     for(int i = 0; i < rectifiedLines.size(); i++){
-        //line( src, Point(rectifiedLines[i][0], rectifiedLines[i][1]), Point(rectifiedLines[i][2], rectifiedLines[i][3]), Scalar(0,255,100), 2, 0);
-        //line( src, Point(templateLines[i][0], templateLines[i][1]), Point(templateLines[i][2], templateLines[i][3]), Scalar(0,255,200), 2, 0);
+        line( src, Point(rectifiedLines[i][0], rectifiedLines[i][1]), Point(rectifiedLines[i][2], rectifiedLines[i][3]), Scalar(0,255,100), 2, 0);
+        line( src, Point(templateLines[i][0], templateLines[i][1]), Point(templateLines[i][2], templateLines[i][3]), Scalar(0,255,200), 2, 0);
     }
+    */
     
     // Record each possible match
     vector<Match> matches;
