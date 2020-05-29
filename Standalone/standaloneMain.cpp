@@ -21,6 +21,7 @@ bool useRectification = true;
 bool manualSelection = false;
 bool useMask = true;
 bool mirrorInput = false;
+bool rotateInput = false;
 
 Mat src;
 Mat HSV;
@@ -398,6 +399,7 @@ vector<Match> getBestMatches(vector<Match> matches, vector<Vec4f> templateLines,
     return bestMatches;
 }
 
+// Given a cluster of lines find one single line of best fit, biased twowards the center of the pitch to avoid outliers.
 extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
     float avgX = 0.0;
     float avgY = 0.0;
@@ -420,22 +422,22 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
         
         float checkAng = angle*(180/CV_PI);
         if(checkAng < 0) checkAng += 180;
-        float dist;
-        if(checkAng >= 45 && checkAng <= 160){
+        float dist = -1;
+        if(checkAng >= 45 && checkAng <= 160){ // Line is vertical
             Vec4f horiz = Vec4f( center[0]-100, center[1], center[0]+100, center[1]);
             dist = abs(intersect(inputLines[i], horiz)[0] - center[0]);
-            //dist = abs(getCenter(inputLines[i])[0] - center[0]);
-        } else {
-            Vec4f vert = Vec4f( center[0], center[1]-100, center[0], center[1]+100);
-            dist = abs(intersect(inputLines[i], vert)[1] - center[1]);
-            //dist = abs(getCenter(inputLines[i])[1] - center[1]);
+        } else { //Line is horizontal
+            if( lineLength(inputLines[i]) > 1080/3){ // Awful hack to avoid those short horizontal lines being choses as best fit.
+                Vec4f vert = Vec4f( center[0], center[1]-100, center[0], center[1]+100);
+                dist = abs(intersect(inputLines[i], vert)[1] - center[1]);
+            }
         }
             
             
         //float dist = abs( lineLength( Vec4f(getCenter(inputLines[i])[0], getCenter(inputLines[i])[1], center[0], center[1] )));
         //float dist = abs(getCenter(inputLines[i])[1] - center[1]);
         
-        if( dist < closestDist ){
+        if( dist < closestDist && dist != -1){
             closestDist = dist;
             x = getCenter(inputLines[i])[0];
             y = getCenter(inputLines[i])[1];
@@ -545,7 +547,7 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
     avgY /= count;
     avgAngle /= count;
     
-    cout << "THE NEW ANGLE FOR DAS CLUSTER BE: " << avgAngle << endl << endl;
+    cout << "Average angle for cluster: " << avgAngle*(180/CV_PI) << endl << endl;
     
     float grad = tan(avgAngle);
     float len = 1000;
@@ -580,7 +582,6 @@ vector<Vec4f> getLines()
     //inRange(HSV, Scalar(27, 86, 2), Scalar(85, 255, 145), thresh);
     inRange(HSV, Scalar(31, 81, 70), Scalar(66, 219, 197), thresh); // renders
     
-    
     imshow("thresh af", thresh);
     
     // opening and closing
@@ -606,12 +607,18 @@ vector<Vec4f> getLines()
         imshow("cont", mask);
         thresh = mask;
     }
+
     
     Mat dst, invdst, cdst;
     GaussianBlur( thresh, invdst, Size( 5, 5 ), 0, 0 );
     Canny(invdst, dst, 50, 200, 3);
     cvtColor(dst, cdst, COLOR_GRAY2BGR);
     
+    if(rotateInput){
+        Mat M = getRotationMatrix2D(Point2f(1920/2,1080/2), -7, 1);
+        warpAffine(dst, dst, M, Size(1920,1080));
+        warpAffine(cdst, cdst, M, Size(1920,1080));
+    }
     vector<Vec4f> lines;
     HoughLinesP(dst, lines, 2, CV_PI/360, 150, 275, 45 );
     
@@ -635,7 +642,10 @@ vector<int> splitHorizontals( vector<Vec4f> lines ){
     
     y1 /= lines.size();
     y2 /= lines.size();
-    float avgY = (y1+y2)/2 - 150;
+    float avgY = (y1+y2)/2 ;
+    Mat checkH = src.clone();
+    line(checkH, Point(0, avgY), Point(4000, avgY), Scalar(255,255,255), 2, 0);
+    imshow("horiz split", checkH);
     
     //cout << "Y threshold: " << avgY<< endl;
     for(int i = 0; i < lines.size(); i++){
@@ -1001,6 +1011,42 @@ void onMouse( int event, int x, int y, int, void* )
     }
 }
 
+void testLines(Mat in, vector<Vec4f> lines){
+    /*
+     iterate over random line pairingss
+     stop when angle between lines is 90 degrees-ish
+     use the more horizontal of these lines as base angle for horizontal line cluster
+     */
+    
+    float baseline = -1;
+    
+    for(int i = 1; i < lines.size(); i++){
+        float angle = getAngle(lines[0], lines[i]);
+        cout << angle << endl;
+        if(angle > 80 && angle < 100){
+            line(in, Point(lines[0][0], lines[0][1]), Point(lines[0][2], lines[0][3]), Scalar(0,255,0), 3);
+            float setAng = getAngle(lines[0]);
+            baseline = setAng;
+            break;
+        }
+    }
+    
+    cout << "baseline = " << baseline << endl;
+
+    for(int i = 0; i < lines.size(); i++){
+        float angle = getAngle(lines[i]);
+        cout << angle << endl;
+        if( (angle > baseline - 15 && angle < baseline + 15) || (angle > (baseline-180) - 15 && angle < (baseline-180) + 15)){
+            line(in, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(0,0,255));
+        } else {
+            line(in, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(255,0,0));
+        }
+    }
+    
+    imshow("testyyy", in);
+    waitKey();
+}
+
 ///////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////
 //////////////                MAIN METHOD              //////////////
@@ -1030,6 +1076,11 @@ int main( int argc, char** argv){
     }
     
     vector<Vec4f> rawLines = getLines();
+    //testLines(src, rawLines);
+    if(rotateInput){
+        Mat M = getRotationMatrix2D(Point2f(1920/2,1080/2), -7, 1);
+        warpAffine(src, src, M, Size(1920,1080));
+    }
     //vector<Vec4f> templateLines {Vec4f(0,0,0,800), Vec4f(430,0,430,800), Vec4f(1440,0,1440,800), Vec4f(0,0,1440,0), Vec4f(0,800,1440,800)};
     vector<Vec4f> templateLines;// {Vec4f(0,0,0,2800), Vec4f(440,0,440,2800), Vec4f(1400,0,1400,2800), Vec4f(0,0,5400,0), Vec4f(0,2800,5400,2800)};;
     
