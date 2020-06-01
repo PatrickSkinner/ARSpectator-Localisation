@@ -28,7 +28,7 @@ Mat HSV;
 Mat thresh;
 Mat finuks;
 
-String filename = "stadiumRender.png";
+String filename = "stadiumRender5d.png";
 Point2f clickCoords = Point2f(640,900);
 int selectedLine = 0; // 0 = leftmost, 1 = center, 2 = rightmost
 bool guiMode = true;
@@ -90,11 +90,7 @@ float getGradient(Vec4f v)
 double getAngle(Vec4f line1){
     double angle1 = atan2( ( line1[3] - line1[1] ), ( line1[2] - line1[0] ) );
     angle1 *= (180/ CV_PI);
-    
-    //angle1 = ((int) angle1 + 360)%360;
-    //angle1 = ((int) angle1 + 180)%180;
-    if(angle1 < -10) angle1 = 180 + angle1;
-    //return abs(angle1);
+    if(angle1 < 0) angle1 = 180 + angle1; // All angles should be in range of 0-180 degrees
     return angle1;
 }
 
@@ -644,8 +640,8 @@ vector<int> splitHorizontals( vector<Vec4f> lines ){
     y2 /= lines.size();
     float avgY = (y1+y2)/2 ;
     Mat checkH = src.clone();
-    line(checkH, Point(0, avgY), Point(4000, avgY), Scalar(255,255,255), 2, 0);
-    imshow("horiz split", checkH);
+    //line(checkH, Point(0, avgY), Point(4000, avgY), Scalar(255,255,255), 2, 0);
+    //imshow("horiz split", checkH);
     
     //cout << "Y threshold: " << avgY<< endl;
     for(int i = 0; i < lines.size(); i++){
@@ -1011,20 +1007,25 @@ void onMouse( int event, int x, int y, int, void* )
     }
 }
 
-void testLines(Mat in, vector<Vec4f> lines){
+void newClustering(Mat in, vector<Vec4f> lines){
     /*
      iterate over random line pairingss
      stop when angle between lines is 90 degrees-ish
      use the more horizontal of these lines as base angle for horizontal line cluster
      */
     
+    vector<Vec4f> horizontals;
+    vector<Vec4f> verticals;
+    int topH = -1;
+    int bottomH = -1;
+    
     float baseline = -1;
+    //line(in, Point(lines[0][0], lines[0][1]), Point(lines[0][2], lines[0][3]), Scalar(0,255,0), 3);
     
     for(int i = 1; i < lines.size(); i++){
         float angle = getAngle(lines[0], lines[i]);
         cout << angle << endl;
-        if(angle > 80 && angle < 100){
-            line(in, Point(lines[0][0], lines[0][1]), Point(lines[0][2], lines[0][3]), Scalar(0,255,0), 3);
+        if(angle > 60 && angle < 120){
             float setAng = getAngle(lines[0]);
             baseline = setAng;
             break;
@@ -1032,15 +1033,58 @@ void testLines(Mat in, vector<Vec4f> lines){
     }
     
     cout << "baseline = " << baseline << endl;
-
+    float grad = 0.0;
+    int horizontalCount = 0;
+    
     for(int i = 0; i < lines.size(); i++){
         float angle = getAngle(lines[i]);
         cout << angle << endl;
-        if( (angle > baseline - 15 && angle < baseline + 15) || (angle > (baseline-180) - 15 && angle < (baseline-180) + 15)){
-            line(in, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(0,0,255));
+        if( (angle > baseline - 10 && angle < baseline + 10) || (angle > (baseline-180) - 10 && angle < (baseline-180) + 10)){
+            //line(in, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(0,0,255));
+            horizontals.push_back(lines[i]);
+            if( topH == -1 || getCenter(lines[i])[1] < topH) topH = getCenter(lines[i])[1] ;
+            if( bottomH == -1 || getCenter(lines[i])[1] > bottomH) bottomH = getCenter(lines[i])[1] ;
+            grad += getGradient(lines[i]);
+            horizontalCount++;
         } else {
-            line(in, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(255,0,0));
+            //line(in, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(255,0,0));
+            verticals.push_back(lines[i]);
         }
+    }
+    
+    cout << "top: " << topH << endl;
+    cout << "bottom: " << bottomH << endl;
+    int mid = (topH+bottomH) / 2;
+    
+    grad /= horizontalCount;
+    //line(in, Point(0, mid-(grad*540)), Point(1920, mid+(grad*540)), Scalar(255,255,255), 3);
+    Vec4f divider (0, mid-(grad*540), 1920, mid+(grad*540));
+    
+    for(int i = 0; i < horizontals.size(); i++){
+        Vec2f vPoint = getCenter(horizontals[i]);
+        Vec4f vLine( vPoint[0], 0, vPoint[0], 1080 );
+        Vec3f inter = intersect(divider, vLine);
+        
+        if( inter[1] > vPoint[1]){
+            line(in, Point(horizontals[i][0], horizontals[i][1]), Point(horizontals[i][2], horizontals[i][3]), Scalar(0,0,255));
+        } else {
+            line(in, Point(horizontals[i][0], horizontals[i][1]), Point(horizontals[i][2], horizontals[i][3]), Scalar(0,255,0));
+        }
+    }
+    
+    sort(verticals.begin(), verticals.end(), compareVec); // Sort lines by angle.
+    int lastX = -1;
+    int cluster = 0;
+    Scalar colour = Scalar( ( rand() % (int) ( 255 + 1 ) ), ( rand() % (int) ( 255 + 1 ) ), ( rand() % (int) ( 255 + 1 ) ));
+    
+    for(int i = 0; i < verticals.size(); i++){
+        int x = intersect( verticals[i], divider)[0];
+        if( lastX == -1 || abs(x - lastX) > 40){
+            colour = Scalar( ( rand() % (int) ( 255 + 1 ) ), ( rand() % (int) ( 255 + 1 ) ), ( rand() % (int) ( 255 + 1 ) ));
+            cluster++;
+        }
+        line(in, Point(verticals[i][0], verticals[i][1]), Point(verticals[i][2], verticals[i][3]), colour);
+        lastX = x;
     }
     
     imshow("testyyy", in);
@@ -1076,7 +1120,7 @@ int main( int argc, char** argv){
     }
     
     vector<Vec4f> rawLines = getLines();
-    //testLines(src, rawLines);
+    //newClustering(src, rawLines);
     if(rotateInput){
         Mat M = getRotationMatrix2D(Point2f(1920/2,1080/2), -7, 1);
         warpAffine(src, src, M, Size(1920,1080));
