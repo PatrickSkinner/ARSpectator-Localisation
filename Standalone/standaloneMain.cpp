@@ -686,17 +686,13 @@ vector<Vec4f> trimLines(vector<Vec4f> inputLines){
     return outputLines;
 }
 
-/** Find the best fitting line for each line cluster and return the line set of best fitting lines, horizontals first */
-vector<Vec4f> cleanLines(vector<Vec4f> lines){
-    vector<Vec4f> sortedLines = lines;
+Mat clusterLines(vector<Vec4f> sortedLines){
+    Mat labels;
     vector<int> sortedAngles;
     
     int threshold = 7; // Minimum angle difference between clusters
     
-    float centroidX = 0.0;
-    float centroidY = 0.0;
     
-    sort(sortedLines.begin(), sortedLines.end(), compareVec); // Sort lines by gradient to make removing duplicates easier
     int label = 0;
     float startAngle = getAngle(sortedLines[0]);
     cout << "Min Angle = " << startAngle << endl;
@@ -710,15 +706,10 @@ vector<Vec4f> cleanLines(vector<Vec4f> lines){
             sortedAngles.push_back(label);
             startAngle = angle;
         }
-        
-        Vec2f mid = getCenter(sortedLines[i]);
-        centroidX += mid[0];
-        centroidY += mid[1];
     }
     
     /* Split horizontal lines into two clusters, for the bottom and top of the pitch */
     vector<Vec4f> horizontals;
-    Mat labels;
     int k = 1;
     int lastOne = 0;
     int setLabel = 0;
@@ -751,6 +742,7 @@ vector<Vec4f> cleanLines(vector<Vec4f> lines){
         }
     }
     
+    
     Mat clustered = src.clone();
     srand(83);
     for(int i = 0; i < k+1; i++){
@@ -762,10 +754,26 @@ vector<Vec4f> cleanLines(vector<Vec4f> lines){
         }
     }
     imshow("Clustering", clustered);
+    cout << "THA K BE: " << k << endl;
     
+    return labels;
+}
+
+/** Find the best fitting line for each line cluster and return the line set of best fitting lines, horizontals first */
+vector<Vec4f> cleanLines(vector<Vec4f> sortedLines, Mat labels){
+    int clusterCount = labels.at<int>(labels.rows-1) + 1;
     vector<Vec4f> cleanedLines;
     
-    for(int i = 0; i < k+1; i++){
+    int centroidX = 0;
+    int centroidY = 0;
+    
+    for(int i = 0; i < sortedLines.size(); i++ ){
+        Vec2f mid = getCenter(sortedLines[i]);
+        centroidX += mid[0];
+        centroidY += mid[1];
+    }
+    
+    for(int i = 0; i < clusterCount; i++){
         vector<Vec2f> points;
         vector<Vec4f> lines;
         
@@ -1091,12 +1099,11 @@ void newClustering(Mat in, vector<Vec4f> lines){
     waitKey();
 }
 
-///////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////
-//////////////                MAIN METHOD              //////////////
-///////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////
-
+/////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////
+//////////////                MAIN METHOD              /////////////
+/////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 
 int main( int argc, char** argv){
     
@@ -1135,7 +1142,11 @@ int main( int argc, char** argv){
     } else if(selectedLine == 2){
         templateLines = {Vec4f(0,0,0,2800), Vec4f(960,0,960,2800), Vec4f(1400,0,1400,2800), Vec4f(0,0,1400,0), Vec4f(0,2800,1400,2800)};
     }
-    vector<Vec4f> lines = cleanLines(rawLines);
+    
+    vector<Vec4f> sortedLines = rawLines;
+    sort(sortedLines.begin(), sortedLines.end(), compareVec); // Sort lines by gradient
+    Mat labels = clusterLines(sortedLines);
+    vector<Vec4f> lines = cleanLines(sortedLines, labels);
     
     vector<Vec4f> rectifiedLines;
     
