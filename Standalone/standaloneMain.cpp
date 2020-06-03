@@ -28,7 +28,7 @@ Mat HSV;
 Mat thresh;
 Mat finuks;
 
-String filename = "stadiumRender5d.png";
+String filename = "stadiumRender.png";
 Point2f clickCoords = Point2f(640,900);
 int selectedLine = 0; // 0 = leftmost, 1 = center, 2 = rightmost
 bool guiMode = true;
@@ -103,6 +103,7 @@ double getAngle(Vec4f line1, Vec4f line2){
     if(angle1 < 0) angle1 = 180 + angle1;
     if(angle2 < 0) angle2 = 180 + angle2;
     //cout << "A1: " << angle1 << " , A2: " << angle2 << endl;
+    //cout << "Difference between : " << abs(angle1-angle2) << endl << endl;
     return abs(angle1-angle2);
 }
 
@@ -640,8 +641,8 @@ vector<int> splitHorizontals( vector<Vec4f> lines ){
     y2 /= lines.size();
     float avgY = (y1+y2)/2 ;
     Mat checkH = src.clone();
-    //line(checkH, Point(0, avgY), Point(4000, avgY), Scalar(255,255,255), 2, 0);
-    //imshow("horiz split", checkH);
+    line(checkH, Point(0, avgY), Point(4000, avgY), Scalar(255,255,255), 2, 0);
+    imshow("horiz split", checkH);
     
     //cout << "Y threshold: " << avgY<< endl;
     for(int i = 0; i < lines.size(); i++){
@@ -754,8 +755,6 @@ Mat clusterLines(vector<Vec4f> sortedLines){
         }
     }
     imshow("Clustering", clustered);
-    cout << "THA K BE: " << k << endl;
-    
     return labels;
 }
 
@@ -774,14 +773,10 @@ vector<Vec4f> cleanLines(vector<Vec4f> sortedLines, Mat labels){
     }
     
     for(int i = 0; i < clusterCount; i++){
-        vector<Vec2f> points;
         vector<Vec4f> lines;
         
         for(int j = 0; j < labels.rows; j++){
             if(labels.at<int>(j) == i){
-                points.push_back( Vec2f(sortedLines[j][0], sortedLines[j][1]));
-                points.push_back( Vec2f(sortedLines[j][2], sortedLines[j][3]));
-                
                 lines.push_back( Vec4f(sortedLines[j][0], sortedLines[j][1], sortedLines[j][2], sortedLines[j][3]));
             }
         }
@@ -795,6 +790,9 @@ vector<Vec4f> cleanLines(vector<Vec4f> sortedLines, Mat labels){
         
         line( src, Point(pushLine[0], pushLine[1]), Point(pushLine[2], pushLine[3]), Scalar(0,128,255), 5, 0);
     }
+
+    cout << cleanedLines.size() << endl;
+    waitKey();
     
     cleanedLines = trimLines(cleanedLines);
     return cleanedLines;
@@ -1015,12 +1013,8 @@ void onMouse( int event, int x, int y, int, void* )
     }
 }
 
-void newClustering(Mat in, vector<Vec4f> lines){
-    /*
-     iterate over random line pairingss
-     stop when angle between lines is 90 degrees-ish
-     use the more horizontal of these lines as base angle for horizontal line cluster
-     */
+Mat newClustering(Mat in, vector<Vec4f>& lines){
+    Mat labels;
     
     vector<Vec4f> horizontals;
     vector<Vec4f> verticals;
@@ -1028,17 +1022,17 @@ void newClustering(Mat in, vector<Vec4f> lines){
     int bottomH = -1;
     
     float baseline = -1;
-    //line(in, Point(lines[0][0], lines[0][1]), Point(lines[0][2], lines[0][3]), Scalar(0,255,0), 3);
+    int lowestMid = -1;
+    int lowestLine = -1;
     
-    for(int i = 1; i < lines.size(); i++){
-        float angle = getAngle(lines[0], lines[i]);
-        cout << angle << endl;
-        if(angle > 60 && angle < 120){
-            float setAng = getAngle(lines[0]);
-            baseline = setAng;
-            break;
+    for(int i = 0; i < lines.size(); i++){
+        if( getCenter(lines[i])[1] > lowestMid ){
+            lowestMid = getCenter(lines[i])[1];
+            lowestLine = i;
         }
     }
+    baseline = getAngle(lines[lowestLine]);
+    line(in, Point(lines[lowestLine][0], lines[lowestLine][1]), Point(lines[lowestLine][2], lines[lowestLine][3]), Scalar(0,255,0), 3);
     
     cout << "baseline = " << baseline << endl;
     float grad = 0.0;
@@ -1048,7 +1042,7 @@ void newClustering(Mat in, vector<Vec4f> lines){
         float angle = getAngle(lines[i]);
         cout << angle << endl;
         if( (angle > baseline - 10 && angle < baseline + 10) || (angle > (baseline-180) - 10 && angle < (baseline-180) + 10)){
-            //line(in, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(0,0,255));
+            //line(in, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(255,255,255), 5);
             horizontals.push_back(lines[i]);
             if( topH == -1 || getCenter(lines[i])[1] < topH) topH = getCenter(lines[i])[1] ;
             if( bottomH == -1 || getCenter(lines[i])[1] > bottomH) bottomH = getCenter(lines[i])[1] ;
@@ -1069,34 +1063,42 @@ void newClustering(Mat in, vector<Vec4f> lines){
     Vec4f divider (0, mid-(grad*540), 1920, mid+(grad*540));
     
     for(int i = 0; i < horizontals.size(); i++){
+        //line(in, Point(horizontals[i][0], horizontals[i][1]), Point(horizontals[i][2], horizontals[i][3]), Scalar(255,255,255), 5);
         Vec2f vPoint = getCenter(horizontals[i]);
         Vec4f vLine( vPoint[0], 0, vPoint[0], 1080 );
         Vec3f inter = intersect(divider, vLine);
         
         if( inter[1] > vPoint[1]){
             line(in, Point(horizontals[i][0], horizontals[i][1]), Point(horizontals[i][2], horizontals[i][3]), Scalar(0,0,255));
+            labels.push_back(0);
         } else {
             line(in, Point(horizontals[i][0], horizontals[i][1]), Point(horizontals[i][2], horizontals[i][3]), Scalar(0,255,0));
+            labels.push_back(1);
         }
     }
     
-    sort(verticals.begin(), verticals.end(), compareVec); // Sort lines by angle.
     int lastX = -1;
-    int cluster = 0;
+    int cluster = 2;
     Scalar colour = Scalar( ( rand() % (int) ( 255 + 1 ) ), ( rand() % (int) ( 255 + 1 ) ), ( rand() % (int) ( 255 + 1 ) ));
     
     for(int i = 0; i < verticals.size(); i++){
         int x = intersect( verticals[i], divider)[0];
-        if( lastX == -1 || abs(x - lastX) > 40){
+        if( lastX != -1 && abs(x - lastX) > 40){
             colour = Scalar( ( rand() % (int) ( 255 + 1 ) ), ( rand() % (int) ( 255 + 1 ) ), ( rand() % (int) ( 255 + 1 ) ));
             cluster++;
         }
         line(in, Point(verticals[i][0], verticals[i][1]), Point(verticals[i][2], verticals[i][3]), colour);
+        labels.push_back(cluster);
         lastX = x;
     }
     
-    imshow("testyyy", in);
-    waitKey();
+    imshow("clustered", in);
+    //waitKey();
+    
+    horizontals.insert( horizontals.end(), verticals.begin(), verticals.end() ); //
+    lines = horizontals; // Need to put the input lines in same order as our labels.
+    
+    return labels;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -1127,7 +1129,6 @@ int main( int argc, char** argv){
     }
     
     vector<Vec4f> rawLines = getLines();
-    //newClustering(src, rawLines);
     if(rotateInput){
         Mat M = getRotationMatrix2D(Point2f(1920/2,1080/2), -7, 1);
         warpAffine(src, src, M, Size(1920,1080));
@@ -1145,7 +1146,8 @@ int main( int argc, char** argv){
     
     vector<Vec4f> sortedLines = rawLines;
     sort(sortedLines.begin(), sortedLines.end(), compareVec); // Sort lines by gradient
-    Mat labels = clusterLines(sortedLines);
+    
+    Mat labels = newClustering(src, sortedLines);
     vector<Vec4f> lines = cleanLines(sortedLines, labels);
     
     vector<Vec4f> rectifiedLines;
