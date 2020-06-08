@@ -23,15 +23,20 @@ bool useMask = true;
 bool mirrorInput = false;
 bool rotateInput = false;
 
+bool getPose = true;
+
 Mat src;
 Mat HSV;
 Mat thresh;
 Mat finuks;
 
-String filename = "stadiumRender.png";
+String filename = "0011.png";
 Point2f clickCoords = Point2f(640,900);
 int selectedLine = 0; // 0 = leftmost, 1 = center, 2 = rightmost
 bool guiMode = true;
+
+float baseline = -1;
+int blThresh = 15;
 
 class Match{
 public:
@@ -242,7 +247,7 @@ vector<Match> getBestMatches(vector<Match> matches, vector<Vec4f> templateLines,
     
     //line(debugMat, Point2f(matches[closest].l2[0], matches[closest].l2[1]), Point2f(matches[closest].l2[2], matches[closest].l2[3]), Scalar(0,255,0), 5);
     //line(debugMat, clickCoords, Point2f(getCenter(matches[closest].l2)[0], getCenter(matches[closest].l2)[1]), Scalar(0,255,0), 5);
-    cout << "Closest Index: " << closest << ",     Distance: " << closestDist << endl;
+    //cout << "Closest Index: " << closest << ",     Distance: " << closestDist << endl;
     
     
     Match candidate;
@@ -390,7 +395,7 @@ vector<Match> getBestMatches(vector<Match> matches, vector<Vec4f> templateLines,
     }
     bestMatches.push_back(candidate);
     
-    cout << "HOW MANY MATCHES????     " << bestMatches.size() << endl;
+    //cout << "HOW MANY MATCHES????     " << bestMatches.size() << endl;
     //imshow("DEEEEEBUUUUUG", debugMat);
     
     return bestMatches;
@@ -424,21 +429,22 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
             Vec4f horiz = Vec4f( center[0]-100, center[1], center[0]+100, center[1]);
             dist = abs(intersect(inputLines[i], horiz)[0] - center[0]);
         } else { //Line is horizontal
-            if( lineLength(inputLines[i]) > 1080/3){ // Awful hack to avoid those short horizontal lines being choses as best fit.
+            //if( lineLength(inputLines[i]) > 1080/3){ // Awful hack to avoid those short horizontal lines being choses as best fit.
                 Vec4f vert = Vec4f( center[0], center[1]-100, center[0], center[1]+100);
                 dist = abs(intersect(inputLines[i], vert)[1] - center[1]);
-            }
+            //}
         }
             
             
         //float dist = abs( lineLength( Vec4f(getCenter(inputLines[i])[0], getCenter(inputLines[i])[1], center[0], center[1] )));
         //float dist = abs(getCenter(inputLines[i])[1] - center[1]);
         
+        //cout << "dist: "<< dist << endl;
         if( dist < closestDist && dist != -1){
             closestDist = dist;
             x = getCenter(inputLines[i])[0];
             y = getCenter(inputLines[i])[1];
-            cout << "angle: " << ang << ",   X: "<< inputLines[i][3] - inputLines[i][1] << ",   Y: " << inputLines[i][3] - inputLines[i][1] << endl;
+            //cout << "angle: " << ang << ",   X: "<< inputLines[i][3] - inputLines[i][1] << ",   Y: " << inputLines[i][3] - inputLines[i][1] << endl;
             ang = atan2( ( inputLines[i][3] - inputLines[i][1] ), ( inputLines[i][2] - inputLines[i][0] ) );
             ang *= (180/CV_PI);
             if(ang < 0) ang += 180;
@@ -494,9 +500,7 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
                 float thisAngle = atan2( ( inputLines[i][3] - inputLines[i][1] ), ( inputLines[i][2] - inputLines[i][0] ) );
                 //thisAngle *= (180/CV_PI);
                 //if(thisAngle < 0) thisAngle += 180;
-                cout << " thisAngle :    " << thisAngle << endl;
-                
-                
+                //cout << " thisAngle :    " << thisAngle << endl;
                 
                 avgX += p.x;
                 avgY += p.y;
@@ -526,7 +530,7 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
                 float thisAngle = atan2( ( inputLines[i][3] - inputLines[i][1] ), ( inputLines[i][2] - inputLines[i][0] ) );
                 //thisAngle *= (180/CV_PI);
                 //if(thisAngle < 0) thisAngle += 180;
-                cout << " thisAngle :    " << thisAngle << endl;
+                //cout << " thisAngle :    " << thisAngle << endl;
                 
                 
                 
@@ -544,11 +548,12 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
     avgY /= count;
     avgAngle /= count;
     
-    cout << "Average angle for cluster: " << avgAngle*(180/CV_PI) << endl << endl;
+    //cout << "Average angle for cluster: " << avgAngle*(180/CV_PI) << endl << endl;
     
     float grad = tan(avgAngle);
     float len = 1000;
     
+    //cout << "BEST FIT LINE: " << Vec4f(avgX - len, avgY - (len*grad), avgX + len, avgY + (len*grad)) << endl;
     return Vec4f(avgX - len, avgY - (len*grad), avgX + len, avgY + (len*grad));
 }
 
@@ -576,7 +581,7 @@ vector<Vec4f> getLines()
     // Detect the field based on HSV Range Values
     //inRange(HSV, Scalar(20, 10, 50), Scalar(45, 255, 255), thresh);
     //inRange(HSV, Scalar(32, 124, 51), Scalar(46, 255, 191), thresh); // Stadium Test Pics
-    //inRange(HSV, Scalar(27, 86, 2), Scalar(85, 255, 145), thresh);
+    //inRange(HSV, Scalar(27, 86, 2), Scalar(85, 255, 145), thresh); // broadcast
     inRange(HSV, Scalar(31, 81, 70), Scalar(66, 219, 197), thresh); // renders
     
     imshow("thresh af", thresh);
@@ -656,6 +661,7 @@ vector<int> splitHorizontals( vector<Vec4f> lines ){
     return labels;
 }
 
+//  HT, HB, V, V... ordering
 vector<Vec4f> trimLines(vector<Vec4f> inputLines){
     vector<Vec4f> outputLines;
     
@@ -671,6 +677,9 @@ vector<Vec4f> trimLines(vector<Vec4f> inputLines){
     Vec3f inter1 = intersect( hmgLines[0], hmgLines[2]);
     Vec3f inter2 = intersect( hmgLines[0], hmgLines[n-1]);
     outputLines.push_back( Vec4f( inter1[0], inter1[1], inter2[0], inter2[1]) );
+    
+    //cout << "TOP INTERSECTIONS : " << inter1 << endl << inter2 << endl << endl;
+    //cout << inputLines[0] << endl << "intersects\n" << inputLines[2] << endl;
     
     // Bottom horizontal
     inter1 = intersect( hmgLines[1], hmgLines[2]);
@@ -782,7 +791,6 @@ vector<Vec4f> cleanLines(vector<Vec4f> sortedLines, Mat labels){
         }
         
         Vec2f centroid = Vec2f( centroidX / sortedLines.size(), centroidY / sortedLines.size());
-        cout << "centroid: " << centroid <<endl;
         //line( src, Point(centroid[0], 0), Point(centroid[0], 4000), Scalar(255,255,255), 5, 0);
         //line( src, Point(0, centroid[1]), Point(4000, centroid[1]), Scalar(255,255,255), 5, 0);
         Vec4f pushLine = fitBestLine(lines, centroid);
@@ -792,7 +800,7 @@ vector<Vec4f> cleanLines(vector<Vec4f> sortedLines, Mat labels){
     }
 
     cout << cleanedLines.size() << endl;
-    waitKey();
+    //waitKey();
     
     cleanedLines = trimLines(cleanedLines);
     return cleanedLines;
@@ -800,7 +808,7 @@ vector<Vec4f> cleanLines(vector<Vec4f> sortedLines, Mat labels){
 
 /** input of form, horizontal, horizontal, verticals after, in order of right to left */
 vector<Vec4f> rectifyLines(vector<Vec4f> inputLines){
-    finuks = Mat(1080, 1920, CV_8UC1, Scalar(128,0,0));
+    finuks = Mat(1080, 1920, CV_8UC3, Scalar(0,0,0));
     
     // Convert lines to homogenous form
     vector<Vec3f> hmgLines;
@@ -843,8 +851,11 @@ vector<Vec4f> rectifyLines(vector<Vec4f> inputLines){
     
     perspectiveTransform( in , affinePoints, affineTransform);
     
+    int xaAdj = 0 - affinePoints[0].x;
+    int yaAdj = 0 - affinePoints[0].y;
+    
     for(int i = 0; i < in.size(); i += 2){
-        line( finuks, Point(affinePoints[i].x-600, affinePoints[i].y+1700), Point(affinePoints[i+1].x-600, affinePoints[i+1].y+1700), Scalar(0,0,255), 5);
+        line( finuks, Point(affinePoints[i].x + xaAdj, affinePoints[i].y + yaAdj), Point(affinePoints[i+1].x +xaAdj, affinePoints[i+1].y + yaAdj), Scalar(255,0,0), 5);
     }
     
     vector<Vec3f> hmgLinesAff;
@@ -976,12 +987,12 @@ vector<Vec4f> rectifyLines(vector<Vec4f> inputLines){
     
     
     for(int i = 0; i < metricPoints.size(); i += 2){
-        line( finuks, Point(metricPoints[i].x + xAdj, metricPoints[i].y + yAdj), Point(metricPoints[i+1].x + xAdj, metricPoints[i+1].y + yAdj), Scalar(0,0,0), 5);
+        line( finuks, Point(metricPoints[i].x + xAdj, metricPoints[i].y + yAdj), Point(metricPoints[i+1].x + xAdj, metricPoints[i+1].y + yAdj), Scalar(0,255,0), 5);
     }
     
     imshow("finuks", finuks);
     
-    Mat constraints = Mat(500, 500, CV_8UC1, Scalar(255,255,255));
+    //Mat constraints = Mat(500, 500, CV_8UC1, Scalar(255,255,255));
     
     // Draw axes
     //line( constraints, Point(0, 250), Point(500, 250), Scalar(0,0,128));
@@ -1021,7 +1032,7 @@ Mat newClustering(Mat in, vector<Vec4f>& lines){
     int topH = -1;
     int bottomH = -1;
     
-    float baseline = -1;
+    //float baseline = -1;
     int lowestMid = -1;
     int lowestLine = -1;
     
@@ -1034,14 +1045,15 @@ Mat newClustering(Mat in, vector<Vec4f>& lines){
     baseline = getAngle(lines[lowestLine]);
     line(in, Point(lines[lowestLine][0], lines[lowestLine][1]), Point(lines[lowestLine][2], lines[lowestLine][3]), Scalar(0,255,0), 3);
     
-    cout << "baseline = " << baseline << endl;
+    //cout << "baseline = " << baseline << endl;
     float grad = 0.0;
     int horizontalCount = 0;
+    //int blThresh = 15;
+    
     
     for(int i = 0; i < lines.size(); i++){
         float angle = getAngle(lines[i]);
-        cout << angle << endl;
-        if( (angle > baseline - 10 && angle < baseline + 10) || (angle > (baseline-180) - 10 && angle < (baseline-180) + 10)){
+        if( (angle > baseline - blThresh && angle < baseline + blThresh) || (angle > (baseline-180) - blThresh && angle < (baseline-180) + blThresh)){
             //line(in, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(255,255,255), 5);
             horizontals.push_back(lines[i]);
             if( topH == -1 || getCenter(lines[i])[1] < topH) topH = getCenter(lines[i])[1] ;
@@ -1054,8 +1066,8 @@ Mat newClustering(Mat in, vector<Vec4f>& lines){
         }
     }
     
-    cout << "top: " << topH << endl;
-    cout << "bottom: " << bottomH << endl;
+    //cout << "top: " << topH << endl;
+    //cout << "bottom: " << bottomH << endl;
     int mid = (topH+bottomH) / 2;
     
     grad /= horizontalCount;
@@ -1181,7 +1193,7 @@ int main( int argc, char** argv){
     float templateHeight = lineLength( templateLines[0] );
     float rectifiedLinesHeight = lineLength(rectifiedLines[rectifiedLines.size() - 1]);
     float diff = templateHeight/rectifiedLinesHeight;
-    cout << "diff: " << diff << endl;
+    //cout << "diff: " << diff << endl;
     
     //diff = 3;
     diff = 1080/rectifiedLinesHeight;
@@ -1206,8 +1218,6 @@ int main( int argc, char** argv){
     
     rectifiedLines = scaledLines;
     
-    
-    
     // Align template with rectified lines
     Vec2f templateCenter;
     Vec2f rectifiedCenter;
@@ -1224,14 +1234,11 @@ int main( int argc, char** argv){
     rectifiedCenter = getCenter( rectifiedLines[closest]);
     if(selectedLine == 0){ // leftmost
         templateCenter = getCenter(templateLines[0]);
-        //rectifiedCenter = getCenter( rectifiedLines[ rectifiedLines.size() - 1]);
     } else if (selectedLine == 1){ // center line
         templateCenter = getCenter(templateLines[1]);
-        //rectifiedCenter = getCenter( rectifiedLines[3]);
         
     } else if (selectedLine == 2){ // rightmost line
         templateCenter = getCenter(templateLines[2]);
-        //rectifiedCenter = getCenter( rectifiedLines[2]);
     }
     
     float xAdjust = rectifiedCenter[0] - templateCenter[0];
@@ -1266,7 +1273,7 @@ int main( int argc, char** argv){
     
     sort(matches.begin(), matches.end(), compareMatches);
     vector<Match> bestMatches = getBestMatches(matches, templateLines, clickCoords, selectedLine);
-    cout << "size still: " << bestMatches.size() << endl;
+    //cout << "size still: " << bestMatches.size() << endl;
     
     vector<Vec3f> templateH = vector<Vec3f>(templateLines.size());;
     vector<Vec3f> matchedH = vector<Vec3f>(templateLines.size());;
@@ -1343,8 +1350,8 @@ int main( int argc, char** argv){
     Mat warp = src.clone();
     
     
-    cout << "TEMPLATE H SIZE: " << templateH.size() << endl;
-    cout << "BestMatchesSIZE: " << bestMatches.size() << endl;
+    //cout << "TEMPLATE H SIZE: " << templateH.size() << endl;
+    //cout << "BestMatchesSIZE: " << bestMatches.size() << endl;
     
     for(int i = 0; i < bestMatches.size(); i++)
     {
@@ -1370,32 +1377,86 @@ int main( int argc, char** argv){
         line( templateWarped, Point(bestMatches[i].l2[0], bestMatches[i].l2[1]), Point(bestMatches[i].l2[2], bestMatches[i].l2[3]), Scalar(255,255,255), 2, 0);
     }
     
-    
+    //imshow("Unwarpeeddd", templateWarped);
     
     if(!homography.empty()){
-        
+
         std::vector<Point2f> in;
         std::vector<Point2f> out;
         
-        vector<Vec4f> warpLines {Vec4f(0,0,0,2800), Vec4f(440,0,440,2800), Vec4f(1400,0,1400,2800), Vec4f(0,0,4400,0), Vec4f(0,2800,4400,2800)};
+        //cout << "\n\nHomography : \n" << homography << "\n\n";
+        
+        //vector<Vec4f> warpLines {Vec4f(0,0,0,2800), Vec4f(440,0,440,2800), Vec4f(1400,0,1400,2800), Vec4f(0,0,4400,0), Vec4f(0,2800,4400,2800)};
         
         for( int i = 0; i < templateLines.size(); i++){
             in.push_back( Point2f( templateLines[i][0], templateLines[i][1]) );
             in.push_back( Point2f( templateLines[i][2], templateLines[i][3]) );
+            //cout << Point(in[i].x, in[i].y) << "\t" << Point(in[i+1].x, in[i+1].y) << endl;
         }
+        
+       //cout << "\n\n\n\n";
         
         perspectiveTransform( in , out, homography);
         
         for( int i = 0; i < out.size(); i += 2){
+            //line( finale, Point(in[i].x, in[i].y), Point(in[i+1].x, in[i+1].y), Scalar(0,255,255), 2, 0);
             line( finale, Point(out[i].x, out[i].y), Point(out[i+1].x, out[i+1].y), Scalar(255,0,255), 2, 0);
             //cout << Point(out[i].x, out[i].y) << "\t" << Point(out[i+1].x, out[i+1].y) << endl;
         }
         
+        if(getPose){
+            Mat imgPoints = (Mat_<float>(4,2) << out[0].x, out[0].y, out[2].x, out[2].y, out[1].x, out[1].y, out[3].x, out[3].y);
+            Mat objPoints = (Mat_<float>(4,3) << 8.23, -63.24, 0, -1.34, -63.24, 0, 8.52, -4.86, 0, -1, -4.86, 0);
+            
+            //cout << "\n\n\n" << imgPoints << endl << objPoints << "\n\n\n";
+            
+            Mat rVec, tVec, distCoeffs;
+            /*Mat cameraMatrix = (Mat_<float>(3, 3) << 1920, 0, 1920/2,
+                                                        0, 1920, 1080/2,
+                                                        0, 0, 1);
+            */
+            Mat cameraMatrix = (Mat_<float>(3, 3) << -1600, 0, 960,
+                                                    0, -1600, 540,
+                                                    0, 0, 1);
+            
+            solvePnP(objPoints, imgPoints, cameraMatrix, distCoeffs, rVec, tVec);
+            
+            //cout << tVec << "\n\n\n\n";
+            //cout << rVec << "\n\n\n\n";
+            
+            Mat rMat;
+            Rodrigues(rVec, rMat);
+            
+            //cout << rMat;
+            
+            Mat pose = (Mat_<float>(4,4) << rMat.at<float>(0,0), rMat.at<float>(0,1), rMat.at<float>(0,2), tVec.at<float>(0),
+                                            rMat.at<float>(1,0), rMat.at<float>(1,1), rMat.at<float>(1,2), tVec.at<float>(1),
+                                            rMat.at<float>(2,0), rMat.at<float>(2,1), rMat.at<float>(2,2), tVec.at<float>(2),
+                                            0, 0, 0, 1);
+            Mat invPose;
+            invPose = pose.inv();
+            
+            Mat rMatInv = (Mat_<float>(3,3) <<  invPose.at<float>(0,0), invPose.at<float>(0,1), invPose.at<float>(0,2),
+                                                invPose.at<float>(1,0), invPose.at<float>(1,1), invPose.at<float>(1,2),
+                                                invPose.at<float>(2,0), invPose.at<float>(2,1), invPose.at<float>(2,2));
+                           
+
+            Mat rVecInv;
+            Rodrigues(rMatInv, rVecInv);
+            //cout << pose << endl << endl;
+            cout << invPose << endl << endl;
+            
+            cout << rVecInv << endl<<endl;
+            for(int i = 0; i < 3; i++){
+                cout << rVecInv.at<float>(i)*(CV_PI/180)  << endl;
+            }
+        }
     }
+    
     
     end = clock();
     elapsed = ((double) (end - start)) / CLOCKS_PER_SEC;
-    std::cout << "Time Taken: " << elapsed << endl;;
+    std::cout << "\nTime Taken: " << elapsed << endl;;
     
     imshow("Cleaned Lines", src);
     imshow("Finale", finale);
