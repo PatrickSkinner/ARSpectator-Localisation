@@ -30,7 +30,8 @@ Mat HSV;
 Mat thresh;
 Mat finuks;
 
-String filename = "0011.png";
+String filename = "0001.png";
+String imageSet = "SetOne.txt";
 Point2f clickCoords = Point2f(640,900);
 int selectedLine = 0; // 0 = leftmost, 1 = center, 2 = rightmost
 bool guiMode = true;
@@ -481,6 +482,7 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
             
             float yDiff = y - inputLines[i][1];
             float steps = yDiff / grad;
+            if(grad == 0) steps = 0;
             
             /*
             cout << "Grad: " << grad << endl;
@@ -1113,6 +1115,17 @@ Mat newClustering(Mat in, vector<Vec4f>& lines){
     return labels;
 }
 
+bool isMatched(int n, vector<Vec4f> lines, vector<Match> matches){
+    for(int i = 0; i < matches.size(); i++){
+        if( lines[n] == matches[i].l2 ){
+            //cout << lines[n] << "    is equal to    " << matches[i].l2 << endl;
+            return true;
+        }
+        //cout << lines[n] << "    isn't equal to    " << matches[i].l2 << endl;
+    }
+    return false;
+}
+
 /////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////
 //////////////                MAIN METHOD              /////////////
@@ -1145,13 +1158,13 @@ int main( int argc, char** argv){
         Mat M = getRotationMatrix2D(Point2f(1920/2,1080/2), -7, 1);
         warpAffine(src, src, M, Size(1920,1080));
     }
-    //vector<Vec4f> templateLines {Vec4f(0,0,0,800), Vec4f(430,0,430,800), Vec4f(1440,0,1440,800), Vec4f(0,0,1440,0), Vec4f(0,800,1440,800)};
-    vector<Vec4f> templateLines;// {Vec4f(0,0,0,2800), Vec4f(440,0,440,2800), Vec4f(1400,0,1400,2800), Vec4f(0,0,5400,0), Vec4f(0,2800,5400,2800)};;
+
+    vector<Vec4f> templateLines;
     
     if(selectedLine == 0){
-        templateLines = {Vec4f(0,0,0,2800), Vec4f(440,0,440,2800), Vec4f(1400,0,1400,2800), Vec4f(0,0,5400,0), Vec4f(0,2800,5400,2800)};
+        templateLines = {Vec4f(0,0,0,2800), Vec4f(440,0,440,2800), Vec4f(1400,0,1400,2800), Vec4f(0,0,1400,0), Vec4f(0,2800,1400,2800)};
     } else if(selectedLine == 1){
-       templateLines = {Vec4f(0,0,0,2800), Vec4f(440,0,440,2800), Vec4f(1400,0,1400,2800), Vec4f(0,0,5400,0), Vec4f(0,2800,5400,2800)};
+       templateLines = {Vec4f(0,0,0,2350), Vec4f(350,0,350,2350), Vec4f(700,0,700,2350), Vec4f(0,0,700,0), Vec4f(0,2350,700,2350)};
     } else if(selectedLine == 2){
         templateLines = {Vec4f(0,0,0,2800), Vec4f(960,0,960,2800), Vec4f(1400,0,1400,2800), Vec4f(0,0,1400,0), Vec4f(0,2800,1400,2800)};
     }
@@ -1163,21 +1176,11 @@ int main( int argc, char** argv){
     vector<Vec4f> lines = cleanLines(sortedLines, labels);
     
     vector<Vec4f> rectifiedLines;
-    
-    if(useRectification){
-        rectifiedLines = rectifyLines(lines);
-    } else {
-        rectifiedLines = lines;
-    }
-    
-    for( size_t i = 0; i < lines.size(); i++ )
-    {
-        line( src, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(0,0,255), 2, 0);
-    }
+    rectifiedLines = lines;
+
     
     for( size_t i = 0; i < templateLines.size(); i++ )
     {
-        
         templateLines[i][0] /= 4;
         templateLines[i][2] /= 4;
         templateLines[i][1] /= 4;
@@ -1218,85 +1221,188 @@ int main( int argc, char** argv){
     
     rectifiedLines = scaledLines;
     
-    // Align template with rectified lines
-    Vec2f templateCenter;
-    Vec2f rectifiedCenter;
+    vector<Match> bestMatches;
+    bestMatches.push_back( Match( templateLines[templateLines.size()-2], lines[0], 666) ); // top
+    bestMatches.push_back( Match( templateLines[templateLines.size()-1], lines[1], 666) ); // bottom
     
-    int closest = -1;
-    float closestDist = -1;
-    for(int i = 0; i < lines.size(); i++){
-        if(minimum_distance(lines[i], clickCoords) < closestDist || closestDist == -1){
-            closest = i;
-            closestDist = minimum_distance(lines[i], clickCoords);
+    
+    
+    Vec4f horiz = Vec4f(0, 900, 1920, 900 );
+    
+    if(selectedLine == 0 ){ // left
+        // First vertical line matched is the line clicked by the user
+        int closest = -1;
+        int closestDist = -1;
+        for(int i = 0; i < lines.size(); i++){
+            if(minimum_distance(lines[i], clickCoords) < closestDist || closestDist == -1){
+                closest = i;
+                closestDist = minimum_distance(lines[i], clickCoords);
+            }
         }
-    }
-    
-    rectifiedCenter = getCenter( rectifiedLines[closest]);
-    if(selectedLine == 0){ // leftmost
-        templateCenter = getCenter(templateLines[0]);
-    } else if (selectedLine == 1){ // center line
-        templateCenter = getCenter(templateLines[1]);
+        bestMatches.push_back( Match( templateLines[0], lines[closest], 666) );
         
-    } else if (selectedLine == 2){ // rightmost line
-        templateCenter = getCenter(templateLines[2]);
-    }
-    
-    float xAdjust = rectifiedCenter[0] - templateCenter[0];
-    float yAdjust = rectifiedCenter[1] - templateCenter[1];
-    
-    for(int i = 0; i < rectifiedLines.size(); i++){
-        rectifiedLines[i][0] -= xAdjust;
-        rectifiedLines[i][1] -= yAdjust;
-        rectifiedLines[i][2] -= xAdjust;
-        rectifiedLines[i][3] -= yAdjust;
+        for(int i = 1; i < templateLines.size() - 2; i++){
+            int index = -1;
+            int minDist = -1;
+            for(int j = 0; j < lines.size(); j++){
+                //if line is to the right of last matched line
+                if( intersect(lines[j], horiz)[0] > intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0] ){
+                    //if distance is smaller than last checked distance
+                    if( abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]) < minDist || minDist == -1 ){
+                        // Check if not already matched
+                        if( !isMatched(j, lines, bestMatches) ){
+                            /*
+                            cout << lines[j] << "   hasn't been matched yet" << endl;
+                            cout << "and is to the right of " << bestMatches[bestMatches.size()-1].l2 << endl;
+                            cout << "and the distance to the last line is " << abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]) << " which is less than " << minDist<< endl
+                                << intersect(lines[j], horiz)[0] << " to " << intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]<< endl;
+                            */
+                            minDist = abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]);
+                            index = j;
+                        }
+                    }
+                }
+            }
+            bestMatches.push_back( Match( templateLines[i], lines[index], 666) );
+        }
+    } else if (selectedLine == 1){ // center
+        // First vertical line matched is the line clicked by the user
+        int closest = -1;
+        int closestDist = -1;
+        for(int i = 0; i < lines.size(); i++){
+            if(minimum_distance(lines[i], clickCoords) < closestDist || closestDist == -1){
+                closest = i;
+                closestDist = minimum_distance(lines[i], clickCoords);
+            }
+        }
+        bestMatches.push_back( Match( templateLines[1], lines[closest], 666) );
+        
+        // Find line right of center
+        int index = -1;
+        int minDist = -1;
+        for(int j = 0; j < lines.size(); j++){
+            //if line is to the right of last matched line
+            if( intersect(lines[j], horiz)[0] > intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0] ){
+                //if distance is smaller than last checked distance
+                if( abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]) < minDist || minDist == -1 ){
+                    // Check if not already matched
+                    if( !isMatched(j, lines, bestMatches) ){
+                        /*
+                        cout << lines[j] << "   hasn't been matched yet" << endl;
+                        cout << "and is to the right of " << bestMatches[bestMatches.size()-1].l2 << endl;
+                        cout << "and the distance to the last line is " << abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]) << " which is less than " << minDist<< endl
+                            << intersect(lines[j], horiz)[0] << " to " << intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]<< endl;
+                        */
+                        minDist = abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]);
+                        index = j;
+                    }
+                }
+            }
+        }
+        bestMatches.push_back( Match( templateLines[2], lines[index], 666) );
+        
+        
+        
+        // Find line left of center
+        index = -1;
+        minDist = -1;
+        for(int j = 0; j < lines.size(); j++){
+            //if line is to the left of center line
+            if( intersect(lines[j], horiz)[0] < intersect(bestMatches[2].l2, horiz)[0] ){
+                //if distance is smaller than last checked distance
+                if( abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]) < minDist || minDist == -1 ){
+                    // Check if not already matched
+                    if( !isMatched(j, lines, bestMatches) ){
+                        minDist = abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]);
+                        index = j;
+                    }
+                }
+            }
+        }
+        bestMatches.push_back( Match( templateLines[0], lines[index], 666) );
+        
+    } else if (selectedLine == 2){ // right
+        // Rightmost vertical line matched is the line clicked by the user
+        int closest = -1;
+        int closestDist = -1;
+        for(int i = 0; i < lines.size(); i++){
+            if(minimum_distance(lines[i], clickCoords) < closestDist || closestDist == -1){
+                closest = i;
+                closestDist = minimum_distance(lines[i], clickCoords);
+            }
+        }
+        bestMatches.push_back( Match( templateLines[2], lines[closest], 666) );
+        
+        for(int i = 1; i >= 0; i--){
+            int index = -1;
+            int minDist = -1;
+            for(int j = 0; j < lines.size(); j++){
+                //if line is to the left of last matched line
+                if( intersect(lines[j], horiz)[0] < intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0] ){
+                    //if distance is smaller than last checked distance
+                    if( abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]) < minDist || minDist == -1 ){
+                        // Check if not already matched
+                        if( !isMatched(j, lines, bestMatches) ){
+                            minDist = abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]);
+                            index = j;
+                        }
+                    }
+                }
+            }
+            bestMatches.push_back( Match( templateLines[i], lines[index], 666) );
+        }
+        
     }
     
     /*
-    for(int i = 0; i < rectifiedLines.size(); i++){
-        line( src, Point(rectifiedLines[i][0], rectifiedLines[i][1]), Point(rectifiedLines[i][2], rectifiedLines[i][3]), Scalar(0,255,100), 2, 0);
-        line( src, Point(templateLines[i][0], templateLines[i][1]), Point(templateLines[i][2], templateLines[i][3]), Scalar(0,255,200), 2, 0);
-    }
+    Vec4f oldLine = bestMatches[1].l2;
+    Vec4f swapLine = Vec4f( oldLine[2], oldLine[3], oldLine[0], oldLine[1]);
+    bestMatches[1].l2 = swapLine;
     */
     
-    // Record each possible match
-    vector<Match> matches;
-    for(int i = 0; i < templateLines.size(); i++)
-    {
-        for(int j = 0; j < lines.size(); j++)
-        {
-            float dist = midpointDistance(templateLines[i], rectifiedLines[j]);
-            if( (getAngle(templateLines[i], rectifiedLines[j]) < 70) || (getAngle(templateLines[i], rectifiedLines[j]) > 170)){
-                matches.push_back( Match(templateLines[i], lines[j], dist ));
-            }
-        }
-    }
-    
-    sort(matches.begin(), matches.end(), compareMatches);
-    vector<Match> bestMatches = getBestMatches(matches, templateLines, clickCoords, selectedLine);
-    //cout << "size still: " << bestMatches.size() << endl;
     
     vector<Vec3f> templateH = vector<Vec3f>(templateLines.size());;
-    vector<Vec3f> matchedH = vector<Vec3f>(templateLines.size());;
+       vector<Vec3f> matchedH = vector<Vec3f>(templateLines.size());;
+       
+       // Take detected lines and template line sets and convert them to homogenous coordinates
+       for(int i = 0; i < bestMatches.size(); i++){
+           templateH[i] = Vec3f(bestMatches[i].l1[0], bestMatches[i].l1[1], 1).cross( Vec3f(bestMatches[i].l1[2], bestMatches[i].l1[3], 1 ) );
+           if(templateH[i][2] != 0){
+               templateH[i][0] /= templateH[i][2];
+               templateH[i][1] /= templateH[i][2];
+               templateH[i][2] /= templateH[i][2];
+           }
+           
+           matchedH[i] = Vec3f(bestMatches[i].l2[0], bestMatches[i].l2[1], 1).cross( Vec3f(bestMatches[i].l2[2], bestMatches[i].l2[3], 1 ) );
+           if(matchedH[i][2] != 0){
+               matchedH[i][0] /= matchedH[i][2];
+               matchedH[i][1] /= matchedH[i][2];
+               matchedH[i][2] /= matchedH[i][2];
+           }
+       }
     
-    // Take detected lines and template line sets and convert them to homogenous coordinates
-    for(int i = 0; i < bestMatches.size(); i++){
-        templateH[i] = Vec3f(bestMatches[i].l1[0], bestMatches[i].l1[1], 1).cross( Vec3f(bestMatches[i].l1[2], bestMatches[i].l1[3], 1 ) );
-        if(templateH[i][2] != 0){
-            templateH[i][0] /= templateH[i][2];
-            templateH[i][1] /= templateH[i][2];
-            templateH[i][2] /= templateH[i][2];
-        }
-        
-        matchedH[i] = Vec3f(bestMatches[i].l2[0], bestMatches[i].l2[1], 1).cross( Vec3f(bestMatches[i].l2[2], bestMatches[i].l2[3], 1 ) );
-        if(matchedH[i][2] != 0){
-            matchedH[i][0] /= matchedH[i][2];
-            matchedH[i][1] /= matchedH[i][2];
-            matchedH[i][2] /= matchedH[i][2];
-        }
+    
+    Mat warp = Mat(1080, 1920, CV_8UC3, Scalar(0,0,0));
+    
+    line(warp, Point(horiz[0], horiz[1]), Point(horiz[2], horiz[3]), Scalar(255,255,255), 5);
+    for(int i = 0; i < bestMatches.size(); i++)
+    {
+        line( warp, Point(bestMatches[i].l1[0], bestMatches[i].l1[1]), Point(bestMatches[i].l1[2], bestMatches[i].l1[3]), Scalar(0,255,255), 2, 0);
+        line( warp, Point(bestMatches[i].l2[0], bestMatches[i].l2[1]), Point(bestMatches[i].l2[2], bestMatches[i].l2[3]), Scalar(255,0,255), 2, 0);
+        Vec2f tempMid = getCenter(bestMatches[i].l1);
+        Vec2f matchMid = getCenter(bestMatches[i].l2);
+        line( warp, Point(tempMid[0], tempMid[1]), Point(matchMid[0], matchMid[1]), Scalar(0,255,100), 2, 0);
     }
+    
+    imshow("warp", warp);
+    //waitKey();
+    
+    
+    
     
     // Homography computation using SVD
     Mat aMat = Mat(0,9,CV_32F);
+    
     for(int i = 0; i < templateH.size(); i++){
         float x, y, u, v;
         
@@ -1335,6 +1441,7 @@ int main( int argc, char** argv){
     transpose(aSVD.vt, rightSingular);
     Mat h = rightSingular.col( rightSingular.cols-1);
     
+    
     Mat homography = Mat(3, 3, CV_32F);
     for (int i = 0 ; i < 3 ; i++){
         for (int j = 0 ; j < 3 ; j++){
@@ -1342,17 +1449,20 @@ int main( int argc, char** argv){
         }
     }
     
+    cout << homography << endl << endl;
+    
     //////////////////////////////////////////////////////////
     ////////////// Display output for debugging //////////////
     //////////////////////////////////////////////////////////
     
     
-    Mat warp = src.clone();
+    //Mat warp = src.clone();
     
     
     //cout << "TEMPLATE H SIZE: " << templateH.size() << endl;
     //cout << "BestMatchesSIZE: " << bestMatches.size() << endl;
     
+    /*
     for(int i = 0; i < bestMatches.size(); i++)
     {
         line( warp, Point(bestMatches[i].l1[0], bestMatches[i].l1[1]), Point(bestMatches[i].l1[2], bestMatches[i].l1[3]), Scalar(0,255,255), 2, 0);
@@ -1361,9 +1471,10 @@ int main( int argc, char** argv){
         Vec2f matchMid = getCenter(bestMatches[i].l2);
         line( warp, Point(tempMid[0], tempMid[1]), Point(matchMid[0], matchMid[1]), Scalar(0,255,100), 2, 0);
     }
+    */
     
     
-    imshow("input", warp);
+    //imshow("input", warp);
     
     Mat templateOriginal = Mat(warp.rows, warp.cols, CV_8UC3);
     Mat templateWarped = Mat(warp.rows, warp.cols, CV_8UC3);
@@ -1394,14 +1505,16 @@ int main( int argc, char** argv){
             //cout << Point(in[i].x, in[i].y) << "\t" << Point(in[i+1].x, in[i+1].y) << endl;
         }
         
-       //cout << "\n\n\n\n";
+    cout << "\n\n\n\n";
         
         perspectiveTransform( in , out, homography);
+        
         
         for( int i = 0; i < out.size(); i += 2){
             //line( finale, Point(in[i].x, in[i].y), Point(in[i+1].x, in[i+1].y), Scalar(0,255,255), 2, 0);
             line( finale, Point(out[i].x, out[i].y), Point(out[i+1].x, out[i+1].y), Scalar(255,0,255), 2, 0);
-            //cout << Point(out[i].x, out[i].y) << "\t" << Point(out[i+1].x, out[i+1].y) << endl;
+            //cout << Point(in[i].x, in[i].y) << "\t" << Point(in[i+1].x, in[i+1].y) << endl;
+            //cout << Point(out[i].x, out[i].y) << "\t" << Point(out[i+1].x, out[i+1].y) << endl << endl << endl;
         }
         
         if(getPose){
@@ -1415,6 +1528,7 @@ int main( int argc, char** argv){
                                                         0, 1920, 1080/2,
                                                         0, 0, 1);
             */
+            // Camera mat from Blender for synthetic testing
             Mat cameraMatrix = (Mat_<float>(3, 3) << -1600, 0, 960,
                                                     0, -1600, 540,
                                                     0, 0, 1);
@@ -1429,26 +1543,30 @@ int main( int argc, char** argv){
             
             //cout << rMat;
             
+            Mat flip = (Mat_<float>(4,4) << -1, 0, 0, 0,
+                                          0, 1, 0, 0,
+                                          0, 0, -1, 0,
+                                          0, 0, 0, 1);
+            
             Mat pose = (Mat_<float>(4,4) << rMat.at<float>(0,0), rMat.at<float>(0,1), rMat.at<float>(0,2), tVec.at<float>(0),
                                             rMat.at<float>(1,0), rMat.at<float>(1,1), rMat.at<float>(1,2), tVec.at<float>(1),
                                             rMat.at<float>(2,0), rMat.at<float>(2,1), rMat.at<float>(2,2), tVec.at<float>(2),
                                             0, 0, 0, 1);
             Mat invPose;
-            invPose = pose.inv();
+            invPose = pose.inv()*flip;
             
             Mat rMatInv = (Mat_<float>(3,3) <<  invPose.at<float>(0,0), invPose.at<float>(0,1), invPose.at<float>(0,2),
                                                 invPose.at<float>(1,0), invPose.at<float>(1,1), invPose.at<float>(1,2),
                                                 invPose.at<float>(2,0), invPose.at<float>(2,1), invPose.at<float>(2,2));
-                           
-
+            
             Mat rVecInv;
             Rodrigues(rMatInv, rVecInv);
             //cout << pose << endl << endl;
-            cout << invPose << endl << endl;
-            
+            cout << "invpose:\n" << invPose << endl << endl;
+            cout << rMatInv << endl<<endl;
             cout << rVecInv << endl<<endl;
             for(int i = 0; i < 3; i++){
-                cout << rVecInv.at<float>(i)*(CV_PI/180)  << endl;
+                cout << rVecInv.at<float>(i)*(180/CV_PI)  << endl;
             }
         }
     }
