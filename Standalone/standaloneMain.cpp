@@ -11,7 +11,7 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
 #include <iostream>
-
+#include "fstream"
 #include <time.h>
 
 using namespace cv;
@@ -30,14 +30,15 @@ Mat HSV;
 Mat thresh;
 Mat finuks;
 
-String filename = "0001.png";
-String imageSet = "SetOne.txt";
+String filename = "old/StadiumRender.png";
+String imageSet = "Set1.txt";
 Point2f clickCoords = Point2f(640,900);
 int selectedLine = 0; // 0 = leftmost, 1 = center, 2 = rightmost
 bool guiMode = true;
 
 float baseline = -1;
-int blThresh = 15;
+int blThresh = 10;
+Vec4f divider;
 
 class Match{
 public:
@@ -185,6 +186,20 @@ float getSetDistance(vector<Vec4f> templateLines, vector<Vec4f> detectedLines){
     }
     
     return totalDistance;
+}
+
+bool checkThreshold(float angle, float baseline, float threshold){
+    if( angle > (baseline-threshold) && angle < (baseline+threshold)) return true;
+    if( (baseline-threshold) < 0 && angle > 180+(baseline-threshold)) return true;
+    if( (baseline+threshold) > 180){
+        if( angle > (baseline-threshold)){
+            return true;
+        }
+        if( angle < (baseline+threshold)-180){
+            return true;
+        }
+    }
+    return false;
 }
 
 /** Find intersection point of two lines */
@@ -415,9 +430,12 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
     
     float searchRange = 10;
     
+    //line( src, Point( center[0]-4000, center[1]), Point( center[0]+4000, center[1]), Scalar(255,255,255), 5, 0);
+    
     for(int i = 0; i < inputLines.size(); i++){
         avgX += getCenter(inputLines[i])[0];
-        avgY += getCenter(inputLines[i])[1];
+        float midY = getCenter(inputLines[i])[1];
+        avgY += midY;
         
         double angle = 0;
         angle = atan2( ( inputLines[i][3] - inputLines[i][1] ), ( inputLines[i][2] - inputLines[i][0] ) );
@@ -426,14 +444,19 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
         float checkAng = angle*(180/CV_PI);
         if(checkAng < 0) checkAng += 180;
         float dist = -1;
-        if(checkAng >= 45 && checkAng <= 160){ // Line is vertical
+        //if(checkAng >= 45 && checkAng <= 160){ // Line is vertical
+        //if( !(checkAng > baseline - blThresh && checkAng < baseline + blThresh) && !(checkAng > (180-baseline) - blThresh && checkAng < (180-baseline) + blThresh)){
+        //if( !(checkAng > baseline - blThresh && checkAng < baseline + blThresh) && !(checkAng > (180 + (baseline - blThresh))) ){
+        if( !checkThreshold(checkAng, baseline, blThresh)){
             Vec4f horiz = Vec4f( center[0]-100, center[1], center[0]+100, center[1]);
             dist = abs(intersect(inputLines[i], horiz)[0] - center[0]);
         } else { //Line is horizontal
-            //if( lineLength(inputLines[i]) > 1080/3){ // Awful hack to avoid those short horizontal lines being choses as best fit.
+            if( !(lineLength(inputLines[i]) < 1080/3 &&
+                  !(intersect(divider, Vec4f( getCenter(inputLines[i])[0], 0, getCenter(inputLines[i])[0], 1080 ))[1] > getCenter(inputLines[i])[1])
+                  ) ){ // Awful hack to avoid those short horizontal lines being choses as best fit.
                 Vec4f vert = Vec4f( center[0], center[1]-100, center[0], center[1]+100);
                 dist = abs(intersect(inputLines[i], vert)[1] - center[1]);
-            //}
+            }
         }
             
             
@@ -476,7 +499,11 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
     int count = 0;
     
     for( int i = 0; i < inputLines.size(); i++){
-        if(ang >= 45 && ang <= 160){ // fix y axis
+        //if(ang >= 45 && ang <= 160){
+        // fix y axis, vertical line
+        //if( !(ang > baseline - blThresh && ang < baseline + blThresh) && !(ang > (180 + (baseline - blThresh))) ){
+        if( !checkThreshold(ang, baseline, blThresh)){
+            //cout << ang << " is not within " << blThresh << " of " << baseline << endl;
             int distAtX = 0;
             float grad = getGradient(inputLines[i]);
             
@@ -509,7 +536,9 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
                 avgAngle += thisAngle;
                 count++;
             }
-        } else { // fix x axis
+        } else { // fix x axis, horizontal line
+            
+            //cout << ang << " is within " << blThresh << " of " << baseline << endl;
             int distAtX = 0;
             float grad = getGradient(inputLines[i]);
             
@@ -523,7 +552,7 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
             */
             
             Point2f p = Point2f(x, inputLines[i][1] + steps);
-            //line( src, Point(inputLines[0][0], inputLines[0][1]), Point(inputLines[0][2], inputLines[0][3]), Scalar(200,0,255), 10, 0);
+            line( src, Point(inputLines[0][0], inputLines[0][1]), Point(inputLines[0][2], inputLines[0][3]), Scalar(200,0,255), 10, 0);
             //line( src, Point( p.x, p.y-9), Point( p.x, p.y+9), Scalar(255,255,255), 5, 0);
             
             distAtX = abs( lineLength( Vec4f(compare.x, compare.y, p.x, p.y )));
@@ -545,20 +574,23 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
         }
     }
     
-    
-    avgX /= count;
-    avgY /= count;
-    avgAngle /= count;
+    if(count != 0){
+        avgX /= count;
+        avgY /= count;
+        avgAngle /= count;
+    }
     
     //cout << "Average angle for cluster: " << avgAngle*(180/CV_PI) << endl << endl;
     
     float grad = tan(avgAngle);
     float len = 1000;
     
+    //cout << avgX << ",   " << avgY << "      count: " << count    <<"     grad : "<<grad <<endl;
     //cout << "BEST FIT LINE: " << Vec4f(avgX - len, avgY - (len*grad), avgX + len, avgY + (len*grad)) << endl;
     return Vec4f(avgX - len, avgY - (len*grad), avgX + len, avgY + (len*grad));
 }
 
+/** Get the index of the largest contour */
 int getMaxAreaContourId(vector <vector<cv::Point>> contours) {
     double maxArea = 0;
     int maxAreaContourId = -1;
@@ -624,12 +656,12 @@ vector<Vec4f> getLines()
         warpAffine(cdst, cdst, M, Size(1920,1080));
     }
     vector<Vec4f> lines;
-    HoughLinesP(dst, lines, 2, CV_PI/360, 150, 275, 45 );
+    HoughLinesP(dst, lines, 3, CV_PI/360, 100, 150, 45 );
     
     for(int i = 0; i < lines.size(); i++ ) line( cdst, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(255,0,0), 3, 0);
     imshow("Lines", cdst);
     
-    cout << "Line count: " << lines.size() << endl;
+    //cout << "Line count: " << lines.size() << endl;
     
     return lines;
 }
@@ -783,6 +815,7 @@ vector<Vec4f> cleanLines(vector<Vec4f> sortedLines, Mat labels){
         centroidY += mid[1];
     }
     
+    //cout << "cluster count:   " << clusterCount << endl;
     for(int i = 0; i < clusterCount; i++){
         vector<Vec4f> lines;
         
@@ -798,13 +831,17 @@ vector<Vec4f> cleanLines(vector<Vec4f> sortedLines, Mat labels){
         Vec4f pushLine = fitBestLine(lines, centroid);
         cleanedLines.push_back( pushLine );
         
-        line( src, Point(pushLine[0], pushLine[1]), Point(pushLine[2], pushLine[3]), Scalar(0,128,255), 5, 0);
+        line( src, Point(pushLine[0], pushLine[1]), Point(pushLine[2], pushLine[3]), Scalar(0,128,255), 8, 0);
     }
 
-    cout << cleanedLines.size() << endl;
+    //cout << cleanedLines.size() << endl;
     //waitKey();
     
     cleanedLines = trimLines(cleanedLines);
+    for(int i = 0; i < cleanedLines.size(); i++){
+        line( src, Point(cleanedLines[i][0], cleanedLines[i][1]), Point(cleanedLines[i][2], cleanedLines[i][3]), Scalar(0,0,255), 3, 0);
+    }
+    //cout << "cleaned size: " << cleanedLines.size() << endl;;
     return cleanedLines;
 }
 
@@ -1055,7 +1092,11 @@ Mat newClustering(Mat in, vector<Vec4f>& lines){
     
     for(int i = 0; i < lines.size(); i++){
         float angle = getAngle(lines[i]);
-        if( (angle > baseline - blThresh && angle < baseline + blThresh) || (angle > (baseline-180) - blThresh && angle < (baseline-180) + blThresh)){
+        if(angle < 0) angle += 180;
+        //if( (angle > baseline - blThresh && angle < baseline + blThresh) || (angle > (180-baseline) - blThresh && angle < (180-baseline) + blThresh)){
+        //if( (angle > baseline - blThresh && angle < baseline + blThresh) || (angle > (180 + (baseline - blThresh))) ){
+        if( checkThreshold(angle, baseline, blThresh)){
+            cout << angle << " is within " << blThresh << " of " << baseline << endl;
             //line(in, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(255,255,255), 5);
             horizontals.push_back(lines[i]);
             if( topH == -1 || getCenter(lines[i])[1] < topH) topH = getCenter(lines[i])[1] ;
@@ -1070,11 +1111,13 @@ Mat newClustering(Mat in, vector<Vec4f>& lines){
     
     //cout << "top: " << topH << endl;
     //cout << "bottom: " << bottomH << endl;
-    int mid = (topH+bottomH) / 2;
+    int mid = topH + (abs(topH-bottomH) / 2);
+    mid -= 100;
+    //cout << mid << endl;
     
     grad /= horizontalCount;
-    //line(in, Point(0, mid-(grad*540)), Point(1920, mid+(grad*540)), Scalar(255,255,255), 3);
-    Vec4f divider (0, mid-(grad*540), 1920, mid+(grad*540));
+    line(in, Point(0, mid-(grad*540)), Point(1920, mid+(grad*540)), Scalar(255,255,255), 3);
+    divider = Vec4f(0, mid-(grad*540), 1920, mid+(grad*540));
     
     for(int i = 0; i < horizontals.size(); i++){
         //line(in, Point(horizontals[i][0], horizontals[i][1]), Point(horizontals[i][2], horizontals[i][3]), Scalar(255,255,255), 5);
@@ -1137,6 +1180,86 @@ int main( int argc, char** argv){
     clock_t start, end;
     double elapsed;
     start = clock();
+    
+    Mat gtPose = Mat();
+    Mat rVecGT;
+    
+    if(argc >= 2){
+        
+        // Take image number as argument and load corresponding image frame.
+        String strIn = argv[1];
+        int parsed = stoi(strIn);
+        cout << "Image " << parsed << endl;
+        if(parsed > 0 && parsed < 10){
+            filename = "000" + strIn + ".png";
+        } else if (parsed >= 10 && parsed < 100){
+            filename = "00" + strIn + ".png";
+        } else if (parsed < 1000){
+            filename = "0" + strIn + ".png";
+        } else {
+            filename = strIn + ".png";
+        }
+        
+        if(argc == 3){
+            String strIn2 = argv[2];
+            parsed = stoi(strIn2);
+            
+            if(parsed >= 0){
+                imageSet = "Set"+strIn2+".txt";
+            }
+        }
+        
+        // Read in ground truth transformation matrix from file
+        ifstream groundTruth(imageSet);
+        String nextLine;
+        bool flag = false;
+        int lCount = 0;
+        if(groundTruth.is_open()){
+            while ( getline (groundTruth,nextLine) )
+            {
+                if(flag && lCount < 19){
+                    if(nextLine != ""){
+                        gtPose.push_back( stof(nextLine) );
+                        //cout << nextLine << endl;
+                    }
+                    lCount++;
+                }
+                
+                if( nextLine == "Image " + strIn){
+                    flag = true;
+                }
+            }
+            groundTruth.close();
+        }
+        
+        gtPose = gtPose.reshape(4,4);
+        //cout << "Ground Truth Mat:\n" << gtPose << endl;
+        //cout << "\n";
+        
+        
+        
+        Mat rMatGT = (Mat_<float>(3,3) <<  gtPose.at<float>(0,0), gtPose.at<float>(0,1), gtPose.at<float>(0,2),
+                                            gtPose.at<float>(1,0), gtPose.at<float>(1,1), gtPose.at<float>(1,2),
+                                            gtPose.at<float>(2,0), gtPose.at<float>(2,1), gtPose.at<float>(2,2));
+        
+        
+        Rodrigues(rMatGT, rVecGT);
+        /*
+        for(int i = 0; i < 3; i++){
+            cout << gtPose.at<float>(i, 3);
+            if(i != 2) cout << ", " ;
+        }
+        cout << endl << endl;
+        for(int i = 0; i < 3; i++){
+            cout << rVecGT.at<float>(i)*(180/CV_PI);
+            if(i != 2) cout << ", " ;
+        }
+        */
+        
+        cout << endl << endl;
+    }
+    
+    
     
     src = imread(filename);
     if(mirrorInput) flip(src, src, +1);
@@ -1263,6 +1386,8 @@ int main( int argc, char** argv){
                     }
                 }
             }
+            //if(lines[index][0] > 4000) cout << "OH FUCK" << "    " << index << "/" << lines.size() << endl;
+            //cout << "Matched\t" << lines[index] << endl;
             bestMatches.push_back( Match( templateLines[i], lines[index], 666) );
         }
     } else if (selectedLine == 1){ // center
@@ -1449,7 +1574,7 @@ int main( int argc, char** argv){
         }
     }
     
-    cout << homography << endl << endl;
+    //cout << homography << endl << endl;
     
     //////////////////////////////////////////////////////////
     ////////////// Display output for debugging //////////////
@@ -1505,7 +1630,7 @@ int main( int argc, char** argv){
             //cout << Point(in[i].x, in[i].y) << "\t" << Point(in[i+1].x, in[i+1].y) << endl;
         }
         
-    cout << "\n\n\n\n";
+        //cout << "\n\n\n\n";
         
         perspectiveTransform( in , out, homography);
         
@@ -1519,7 +1644,15 @@ int main( int argc, char** argv){
         
         if(getPose){
             Mat imgPoints = (Mat_<float>(4,2) << out[0].x, out[0].y, out[2].x, out[2].y, out[1].x, out[1].y, out[3].x, out[3].y);
-            Mat objPoints = (Mat_<float>(4,3) << 8.23, -63.24, 0, -1.34, -63.24, 0, 8.52, -4.86, 0, -1, -4.86, 0);
+            
+            Mat objPoints;
+            if(selectedLine == 0){
+                objPoints = (Mat_<float>(4,3) << 8.23, -63.24, 0, -1.34, -63.24, 0, 8.52, -4.86, 0, -1, -4.86, 0);
+            } else if(selectedLine == 1) {
+                objPoints = (Mat_<float>(4,3) << -40, -62.98, 0, -49.96, -62.96, 0, -39.91, -4.69, 0, -49.68, -4.58, 0);
+            } else if(selectedLine == 2){
+                objPoints = (Mat_<float>(4,3) << -77.33, -62.84, 0, -98.57, -62.71, 0, -77.07, -4.42, 0, -98.26, -4.33, 0);
+            }
             
             //cout << "\n\n\n" << imgPoints << endl << objPoints << "\n\n\n";
             
@@ -1534,9 +1667,6 @@ int main( int argc, char** argv){
                                                     0, 0, 1);
             
             solvePnP(objPoints, imgPoints, cameraMatrix, distCoeffs, rVec, tVec);
-            
-            //cout << tVec << "\n\n\n\n";
-            //cout << rVec << "\n\n\n\n";
             
             Mat rMat;
             Rodrigues(rVec, rMat);
@@ -1561,13 +1691,29 @@ int main( int argc, char** argv){
             
             Mat rVecInv;
             Rodrigues(rMatInv, rVecInv);
-            //cout << pose << endl << endl;
-            cout << "invpose:\n" << invPose << endl << endl;
-            cout << rMatInv << endl<<endl;
-            cout << rVecInv << endl<<endl;
+            //cout << "invpose:\n" << invPose << endl << endl;
+            //cout << rMatInv << endl<<endl;
+            //cout << rVecInv << endl<<endl;
             for(int i = 0; i < 3; i++){
-                cout << rVecInv.at<float>(i)*(180/CV_PI)  << endl;
+                cout << gtPose.at<float>(i, 3) << ", ";
+                //if(i != 2) cout << ", " ;
             }
+            for(int i = 0; i < 3; i++){
+                cout << invPose.at<float>(i, 3);
+                if(i != 2) cout << ", " ;
+            }
+            
+            cout << endl << endl;
+            for(int i = 0; i < 3; i++){
+                cout << rVecGT.at<float>(i)*(180/CV_PI) << ", ";
+                //if(i != 2) cout << ", " ;
+            }
+            for(int i = 0; i < 3; i++){
+                cout << rVecInv.at<float>(i)*(180/CV_PI);
+                if(i != 2) cout << ", " ;
+            }
+            
+            cout << endl;
         }
     }
     
