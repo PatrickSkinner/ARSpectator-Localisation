@@ -30,14 +30,14 @@ Mat HSV;
 Mat thresh;
 Mat finuks;
 
-String filename = "old/StadiumRender.png";
+String filename = "0001.png";
 String imageSet = "Set1.txt";
 Point2f clickCoords = Point2f(640,900);
 int selectedLine = 0; // 0 = leftmost, 1 = center, 2 = rightmost
 bool guiMode = true;
 
 float baseline = -1;
-int blThresh = 10;
+int blThresh = 15;
 Vec4f divider;
 
 class Match{
@@ -444,26 +444,19 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
         float checkAng = angle*(180/CV_PI);
         if(checkAng < 0) checkAng += 180;
         float dist = -1;
-        //if(checkAng >= 45 && checkAng <= 160){ // Line is vertical
-        //if( !(checkAng > baseline - blThresh && checkAng < baseline + blThresh) && !(checkAng > (180-baseline) - blThresh && checkAng < (180-baseline) + blThresh)){
-        //if( !(checkAng > baseline - blThresh && checkAng < baseline + blThresh) && !(checkAng > (180 + (baseline - blThresh))) ){
-        if( !checkThreshold(checkAng, baseline, blThresh)){
+
+        if( !checkThreshold(checkAng, baseline, blThresh)){// Line is vertical
             Vec4f horiz = Vec4f( center[0]-100, center[1], center[0]+100, center[1]);
             dist = abs(intersect(inputLines[i], horiz)[0] - center[0]);
         } else { //Line is horizontal
-            if( !(lineLength(inputLines[i]) < 1080/3 &&
-                  !(intersect(divider, Vec4f( getCenter(inputLines[i])[0], 0, getCenter(inputLines[i])[0], 1080 ))[1] > getCenter(inputLines[i])[1])
-                  ) ){ // Awful hack to avoid those short horizontal lines being choses as best fit.
-                Vec4f vert = Vec4f( center[0], center[1]-100, center[0], center[1]+100);
+            if( (lineLength(inputLines[i]) > (1080/3 + 1080/2)/2) ||
+                  (intersect(divider, Vec4f( getCenter(inputLines[i])[0], 0, getCenter(inputLines[i])[0], 1080 ))[1] > getCenter(inputLines[i])[1]) ) { // Awful hack to avoid those short horizontal lines being chosen as best fit.
+                
+                Vec4f vert = Vec4f( center[0], center[1]-1000, center[0], center[1]+1000);
                 dist = abs(intersect(inputLines[i], vert)[1] - center[1]);
             }
         }
-            
-            
-        //float dist = abs( lineLength( Vec4f(getCenter(inputLines[i])[0], getCenter(inputLines[i])[1], center[0], center[1] )));
-        //float dist = abs(getCenter(inputLines[i])[1] - center[1]);
-        
-        //cout << "dist: "<< dist << endl;
+
         if( dist < closestDist && dist != -1){
             closestDist = dist;
             x = getCenter(inputLines[i])[0];
@@ -478,12 +471,14 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
         //avgAngle += getAngle(inputLines[i]);
     }
     
+    //cout << closestDist << "!\n";
     
+    /*
     avgX /= inputLines.size();
     avgY /= inputLines.size();
     avgAngle /= inputLines.size();
     
-    /*
+    
     // Override averaging with closest line to center
     avgX = x;
     avgY = y;
@@ -502,7 +497,7 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
         //if(ang >= 45 && ang <= 160){
         // fix y axis, vertical line
         //if( !(ang > baseline - blThresh && ang < baseline + blThresh) && !(ang > (180 + (baseline - blThresh))) ){
-        if( !checkThreshold(ang, baseline, blThresh)){
+        if( !checkThreshold(ang, baseline, blThresh)){ //  vertical
             //cout << ang << " is not within " << blThresh << " of " << baseline << endl;
             int distAtX = 0;
             float grad = getGradient(inputLines[i]);
@@ -524,13 +519,13 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
             //cout << "POINT P: " << p << endl << endl;
             
             distAtX = abs( lineLength( Vec4f(compare.x, compare.y, p.x, p.y )));
-            if(distAtX < searchRange){
+            if(distAtX < searchRange+50){ //increased search range for vertical lines, hacky af
                 
                 float thisAngle = atan2( ( inputLines[i][3] - inputLines[i][1] ), ( inputLines[i][2] - inputLines[i][0] ) );
                 //thisAngle *= (180/CV_PI);
-                //if(thisAngle < 0) thisAngle += 180;
+                if(thisAngle < 0) thisAngle += CV_PI;
                 //cout << " thisAngle :    " << thisAngle << endl;
-                
+
                 avgX += p.x;
                 avgY += p.y;
                 avgAngle += thisAngle;
@@ -552,7 +547,7 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
             */
             
             Point2f p = Point2f(x, inputLines[i][1] + steps);
-            line( src, Point(inputLines[0][0], inputLines[0][1]), Point(inputLines[0][2], inputLines[0][3]), Scalar(200,0,255), 10, 0);
+            //line( src, Point(inputLines[0][0], inputLines[0][1]), Point(inputLines[0][2], inputLines[0][3]), Scalar(200,0,255), 10, 0);
             //line( src, Point( p.x, p.y-9), Point( p.x, p.y+9), Scalar(255,255,255), 5, 0);
             
             distAtX = abs( lineLength( Vec4f(compare.x, compare.y, p.x, p.y )));
@@ -560,7 +555,7 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
             if(distAtX < searchRange){
                 float thisAngle = atan2( ( inputLines[i][3] - inputLines[i][1] ), ( inputLines[i][2] - inputLines[i][0] ) );
                 //thisAngle *= (180/CV_PI);
-                //if(thisAngle < 0) thisAngle += 180;
+                if(thisAngle < 0) thisAngle += CV_PI;
                 //cout << " thisAngle :    " << thisAngle << endl;
                 
                 
@@ -582,6 +577,7 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
     
     //cout << "Average angle for cluster: " << avgAngle*(180/CV_PI) << endl << endl;
     
+    //cout << "avgAng: " << avgAngle*(180/CV_PI) << ",   grad: " << tan(avgAngle) << endl;
     float grad = tan(avgAngle);
     float len = 1000;
     
@@ -617,29 +613,47 @@ vector<Vec4f> getLines()
     //inRange(HSV, Scalar(32, 124, 51), Scalar(46, 255, 191), thresh); // Stadium Test Pics
     //inRange(HSV, Scalar(27, 86, 2), Scalar(85, 255, 145), thresh); // broadcast
     inRange(HSV, Scalar(31, 81, 70), Scalar(66, 219, 197), thresh); // renders
-    
+    //inRange(HSV, Scalar(35, 105, 70), Scalar(80, 219, 255), thresh); // artificial
+
     imshow("thresh af", thresh);
     
     // opening and closing
     if(useMask){
         Mat opened;
         Mat closed;
-        Mat kernel = Mat(2, 2, CV_8U, Scalar(1));
+        Mat kernel = Mat(3, 3, CV_8U, Scalar(1));
         morphologyEx(thresh, opened, MORPH_OPEN, kernel);
-        morphologyEx(opened, closed, MORPH_CLOSE, kernel);
-        imshow("MORPH OPS", opened);
+        morphologyEx(opened, closed, MORPH_ERODE, kernel);
+        
+        imshow("MORPH OPS", closed);
+        
+        // Add one pixel white columns to both sides of the image to close contours
+        for(int i = 0; i < closed.rows; i++){
+           //closed.at<uchar>(i, 0) = 255;
+            //closed.at<uchar>(i, closed.cols-1) = 255;
+        }
         vector<vector<cv::Point> > contours;
-        findContours(opened, contours, RETR_TREE, CHAIN_APPROX_SIMPLE);
-        Mat cont;
-        cvtColor(closed, cont, COLOR_GRAY2BGR);
+        
+        findContours(closed, contours, RETR_TREE, CHAIN_APPROX_SIMPLE);
+        //Mat cont;
+        //cvtColor(closed, cont, COLOR_GRAY2BGR);
         
         Mat mask = Mat::ones( thresh.rows, thresh.cols, CV_8U);
         //drawContours(mask, contours, getMaxAreaContourId(contours), Scalar(255,255,255), -1);
+        int j = 0;
         for( int i = 0; i < contours.size(); i++){
             if(contourArea(contours[i]) > 2000){
                 drawContours(mask, contours, i, Scalar(255,0,255), -1);
+                j++;
             }
         }
+        
+        // Remove 1px columns from the sides
+        for(int i = 0; i < mask.rows; i++){
+            //mask.at<uchar>(i, 0) = 0;
+            //mask.at<uchar>(i, closed.cols-1) = 0;
+        }
+        
         imshow("cont", mask);
         thresh = mask;
     }
@@ -656,9 +670,9 @@ vector<Vec4f> getLines()
         warpAffine(cdst, cdst, M, Size(1920,1080));
     }
     vector<Vec4f> lines;
-    HoughLinesP(dst, lines, 3, CV_PI/360, 100, 150, 45 );
+    HoughLinesP(dst, lines, 3, CV_PI/360, 150, 275, 45 );
     
-    for(int i = 0; i < lines.size(); i++ ) line( cdst, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(255,0,0), 3, 0);
+    for(int i = 0; i < lines.size(); i++ ) line( cdst, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(0,255,0), 5, 0);
     imshow("Lines", cdst);
     
     //cout << "Line count: " << lines.size() << endl;
@@ -831,7 +845,7 @@ vector<Vec4f> cleanLines(vector<Vec4f> sortedLines, Mat labels){
         Vec4f pushLine = fitBestLine(lines, centroid);
         cleanedLines.push_back( pushLine );
         
-        line( src, Point(pushLine[0], pushLine[1]), Point(pushLine[2], pushLine[3]), Scalar(0,128,255), 8, 0);
+        //line( src, Point(pushLine[0], pushLine[1]), Point(pushLine[2], pushLine[3]), Scalar(0,128,255), 8, 0);
     }
 
     //cout << cleanedLines.size() << endl;
@@ -1075,14 +1089,16 @@ Mat newClustering(Mat in, vector<Vec4f>& lines){
     int lowestMid = -1;
     int lowestLine = -1;
     
+    int horizThresh = 100; // Max horizontal distance between lines before they're split into separate clusters
+    
     for(int i = 0; i < lines.size(); i++){
-        if( getCenter(lines[i])[1] > lowestMid ){
+        if( getCenter(lines[i])[1] > lowestMid && getCenter(lines[i])[1] < src.rows - 25 ){ // && an extra hack to avoid the bottom edge of the image getting detected
             lowestMid = getCenter(lines[i])[1];
             lowestLine = i;
         }
     }
     baseline = getAngle(lines[lowestLine]);
-    line(in, Point(lines[lowestLine][0], lines[lowestLine][1]), Point(lines[lowestLine][2], lines[lowestLine][3]), Scalar(0,255,0), 3);
+    //line(in, Point(lines[lowestLine][0], lines[lowestLine][1]), Point(lines[lowestLine][2], lines[lowestLine][3]), Scalar(0,255,0), 3);
     
     //cout << "baseline = " << baseline << endl;
     float grad = 0.0;
@@ -1096,7 +1112,7 @@ Mat newClustering(Mat in, vector<Vec4f>& lines){
         //if( (angle > baseline - blThresh && angle < baseline + blThresh) || (angle > (180-baseline) - blThresh && angle < (180-baseline) + blThresh)){
         //if( (angle > baseline - blThresh && angle < baseline + blThresh) || (angle > (180 + (baseline - blThresh))) ){
         if( checkThreshold(angle, baseline, blThresh)){
-            cout << angle << " is within " << blThresh << " of " << baseline << endl;
+            //cout << angle << " is within " << blThresh << " of " << baseline << endl;
             //line(in, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(255,255,255), 5);
             horizontals.push_back(lines[i]);
             if( topH == -1 || getCenter(lines[i])[1] < topH) topH = getCenter(lines[i])[1] ;
@@ -1116,7 +1132,7 @@ Mat newClustering(Mat in, vector<Vec4f>& lines){
     //cout << mid << endl;
     
     grad /= horizontalCount;
-    line(in, Point(0, mid-(grad*540)), Point(1920, mid+(grad*540)), Scalar(255,255,255), 3);
+    //line(in, Point(0, mid-(grad*540)), Point(1920, mid+(grad*540)), Scalar(255,255,255), 3);
     divider = Vec4f(0, mid-(grad*540), 1920, mid+(grad*540));
     
     for(int i = 0; i < horizontals.size(); i++){
@@ -1126,10 +1142,10 @@ Mat newClustering(Mat in, vector<Vec4f>& lines){
         Vec3f inter = intersect(divider, vLine);
         
         if( inter[1] > vPoint[1]){
-            line(in, Point(horizontals[i][0], horizontals[i][1]), Point(horizontals[i][2], horizontals[i][3]), Scalar(0,0,255));
+            line(in, Point(horizontals[i][0], horizontals[i][1]), Point(horizontals[i][2], horizontals[i][3]), Scalar(0,0,255), 4);
             labels.push_back(0);
         } else {
-            line(in, Point(horizontals[i][0], horizontals[i][1]), Point(horizontals[i][2], horizontals[i][3]), Scalar(0,255,0));
+            line(in, Point(horizontals[i][0], horizontals[i][1]), Point(horizontals[i][2], horizontals[i][3]), Scalar(0,255,0), 4);
             labels.push_back(1);
         }
     }
@@ -1140,11 +1156,11 @@ Mat newClustering(Mat in, vector<Vec4f>& lines){
     
     for(int i = 0; i < verticals.size(); i++){
         int x = intersect( verticals[i], divider)[0];
-        if( lastX != -1 && abs(x - lastX) > 40){
+        if( lastX != -1 && abs(x - lastX) > horizThresh){
             colour = Scalar( ( rand() % (int) ( 255 + 1 ) ), ( rand() % (int) ( 255 + 1 ) ), ( rand() % (int) ( 255 + 1 ) ));
             cluster++;
         }
-        line(in, Point(verticals[i][0], verticals[i][1]), Point(verticals[i][2], verticals[i][3]), colour);
+        line(in, Point(verticals[i][0], verticals[i][1]), Point(verticals[i][2], verticals[i][3]), colour, 4);
         labels.push_back(cluster);
         lastX = x;
     }
@@ -1285,7 +1301,7 @@ int main( int argc, char** argv){
     vector<Vec4f> templateLines;
     
     if(selectedLine == 0){
-        templateLines = {Vec4f(0,0,0,2800), Vec4f(440,0,440,2800), Vec4f(1400,0,1400,2800), Vec4f(0,0,1400,0), Vec4f(0,2800,1400,2800)};
+        templateLines = {Vec4f(0,0,0,2800), Vec4f(440,0,440,2800), Vec4f(1420,0,1420,2800), Vec4f(0,0,1420,0), Vec4f(0,2800,1420,2800)};
     } else if(selectedLine == 1){
        templateLines = {Vec4f(0,0,0,2350), Vec4f(350,0,350,2350), Vec4f(700,0,700,2350), Vec4f(0,0,700,0), Vec4f(0,2350,700,2350)};
     } else if(selectedLine == 2){
@@ -1295,7 +1311,8 @@ int main( int argc, char** argv){
     vector<Vec4f> sortedLines = rawLines;
     sort(sortedLines.begin(), sortedLines.end(), compareVec); // Sort lines by gradient
     
-    Mat labels = newClustering(src, sortedLines);
+    Mat labels = newClustering(src.clone(), sortedLines);
+    //Mat labels = clusterLines(sortedLines);
     vector<Vec4f> lines = cleanLines(sortedLines, labels);
     
     vector<Vec4f> rectifiedLines;
@@ -1386,8 +1403,6 @@ int main( int argc, char** argv){
                     }
                 }
             }
-            //if(lines[index][0] > 4000) cout << "OH FUCK" << "    " << index << "/" << lines.size() << endl;
-            //cout << "Matched\t" << lines[index] << endl;
             bestMatches.push_back( Match( templateLines[i], lines[index], 666) );
         }
     } else if (selectedLine == 1){ // center
@@ -1623,8 +1638,11 @@ int main( int argc, char** argv){
         //cout << "\n\nHomography : \n" << homography << "\n\n";
         
         //vector<Vec4f> warpLines {Vec4f(0,0,0,2800), Vec4f(440,0,440,2800), Vec4f(1400,0,1400,2800), Vec4f(0,0,4400,0), Vec4f(0,2800,4400,2800)};
+        //templateLines = {Vec4f(150, 150, 150, 850), Vec4f(260, 150, 260, 850), Vec4f(500, 150, 500, 850), Vec4f(810, 150, 820, 850), Vec4f(150, 150, 1500, 150), Vec4f(150, 850, 700, 850)};
+        
         
         for( int i = 0; i < templateLines.size(); i++){
+            //cout << templateLines[i] << "\t\t!!!!!\n";
             in.push_back( Point2f( templateLines[i][0], templateLines[i][1]) );
             in.push_back( Point2f( templateLines[i][2], templateLines[i][3]) );
             //cout << Point(in[i].x, in[i].y) << "\t" << Point(in[i+1].x, in[i+1].y) << endl;
@@ -1634,6 +1652,20 @@ int main( int argc, char** argv){
         
         perspectiveTransform( in , out, homography);
         
+        
+        // Print reprojected template corner positions
+        vector<Point2f> reproj;
+        for( int i = 0; i < out.size()-4; i++){
+            reproj.push_back(out[i]);
+        }
+        // I didn't know how to change the object ordering in Blender, so I did this BS. Sorry.
+        cout << reproj[1].x << ", " << reproj[1].y << endl;
+        cout << reproj[5].x << ", " << reproj[5].y << endl;
+        cout << reproj[3].x << ", " << reproj[3].y << endl;
+        cout << reproj[0].x << ", " << reproj[0].y << endl;
+        cout << reproj[4].x << ", " << reproj[4].y << endl;
+        cout << reproj[2].x << ", " << reproj[2].y << endl;
+        cout << "\n\n\n";
         
         for( int i = 0; i < out.size(); i += 2){
             //line( finale, Point(in[i].x, in[i].y), Point(in[i+1].x, in[i+1].y), Scalar(0,255,255), 2, 0);
@@ -1695,7 +1727,7 @@ int main( int argc, char** argv){
             //cout << rMatInv << endl<<endl;
             //cout << rVecInv << endl<<endl;
             for(int i = 0; i < 3; i++){
-                cout << gtPose.at<float>(i, 3) << ", ";
+                //cout << gtPose.at<float>(i, 3) << ", ";
                 //if(i != 2) cout << ", " ;
             }
             for(int i = 0; i < 3; i++){
@@ -1705,7 +1737,7 @@ int main( int argc, char** argv){
             
             cout << endl << endl;
             for(int i = 0; i < 3; i++){
-                cout << rVecGT.at<float>(i)*(180/CV_PI) << ", ";
+                //cout << rVecGT.at<float>(i)*(180/CV_PI) << ", ";
                 //if(i != 2) cout << ", " ;
             }
             for(int i = 0; i < 3; i++){
