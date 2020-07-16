@@ -419,6 +419,8 @@ vector<Match> getBestMatches(vector<Match> matches, vector<Vec4f> templateLines,
 
 // Given a cluster of lines find one single line of best fit, biased twowards the center of the pitch to avoid outliers.
 extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center){
+    if(inputLines.size() == 1 ) return inputLines[0];
+    
     float avgX = 0.0;
     float avgY = 0.0;
     float avgAngle = 0.0;
