@@ -34,7 +34,7 @@ String filename = "0001.png";
 String imageSet = "Set1.txt";
 Point2f clickCoords = Point2f(640,900);
 int selectedLine = 0; // 0 = leftmost, 1 = center, 2 = rightmost
-bool guiMode = true;
+bool guiMode = false;
 
 float baseline = -1;
 int blThresh = 15;
@@ -1292,6 +1292,34 @@ int main( int argc, char** argv){
         imshow("Select a Line.", src);
         setMouseCallback( "Select a Line.", onMouse, 0 );
         waitKey();
+    } else {
+        string imageSet = "C1Lines.txt";
+        ifstream groundTruth(imageSet);
+        String strIn = argv[1];
+        int parsed = stoi(strIn);
+        int count = 0;
+        
+        String nextLine;
+        if(groundTruth.is_open()){
+            while ( getline (groundTruth,nextLine) && count < parsed )
+            {
+                count++;
+            }
+            
+            
+            vector<string> result;
+            stringstream s_stream(nextLine); //create string stream from the string
+            while(s_stream.good()) {
+               string substr;
+               getline(s_stream, substr, ','); //get first string delimited by comma
+               result.push_back(substr);
+            }
+            clickCoords = Point2f(stoi(result[0]),stoi(result[1]) );
+            selectedLine = stoi(result[2]);
+            groundTruth.close();
+            
+           //cout << "Click Coords: " << clickCoords << endl;
+        }
     }
     
     vector<Vec4f> rawLines = getLines();
