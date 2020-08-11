@@ -24,7 +24,7 @@ bool mirrorInput = false;
 bool rotateInput = false;
 
 bool debugDisplay = true;
-bool outputDisplay = false;
+bool outputDisplay = true;
 bool getPose = true;
 bool getReprojection = true;
 
@@ -455,7 +455,7 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center, bool isH
             Vec4f horiz = Vec4f( center[0]-100, center[1], center[0]+100, center[1]);
             dist = abs(intersect(inputLines[i], horiz)[0] - center[0]);
         } else { //Line is horizontal
-            if( (lineLength(inputLines[i]) > (1080/3 + 1080/2)/2) ||
+            if( (lineLength(inputLines[i]) > (1080/3 + 1080/2)/3) ||
                   (intersect(divider, Vec4f( getCenter(inputLines[i])[0], 0, getCenter(inputLines[i])[0], 1080 ))[1] > getCenter(inputLines[i])[1]) ) { // Awful hack to avoid those short horizontal lines being chosen as best fit.
                 
                 Vec4f vert = Vec4f( center[0], center[1]-1000, center[0], center[1]+1000);
@@ -529,12 +529,12 @@ extern "C++" Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center, bool isH
             
             Point2f p = Point2f(inputLines[i][0] + steps , y);
             //line( src, Point(inputLines[0][0], inputLines[0][1]), Point(inputLines[0][2], inputLines[0][3]), Scalar(200,0,255), 10, 0);
-            line( src, Point( p.x - searchRange, p.y), Point( p.x + searchRange, p.y), Scalar(255,255,255), 5, 0);
+            //line( src, Point( p.x - searchRange, p.y), Point( p.x + searchRange, p.y), Scalar(255,255,255), 5, 0);
             
             //cout << "POINT P: " << p << endl << endl;
             
             distAtX = abs( lineLength( Vec4f(compare.x, compare.y, p.x, p.y )));
-            if(distAtX < searchRange){ //increased search range for vertical lines, hacky af
+            if(distAtX < searchRange+50){ //increased search range for vertical lines, hacky af
                 
                 float thisAngle = atan2( ( inputLines[i][3] - inputLines[i][1] ), ( inputLines[i][2] - inputLines[i][0] ) );
                 //thisAngle *= (180/CV_PI);
@@ -628,8 +628,8 @@ vector<Vec4f> getLines()
     //inRange(HSV, Scalar(20, 10, 50), Scalar(45, 255, 255), thresh);
     //inRange(HSV, Scalar(32, 124, 51), Scalar(46, 255, 191), thresh); // Stadium Test Pics
     //inRange(HSV, Scalar(27, 86, 2), Scalar(85, 255, 145), thresh); // broadcast
-    inRange(HSV, Scalar(31, 55, 70), Scalar(66, 255, 197), thresh); // renders
-    //inRange(HSV, Scalar(35, 100, 0), Scalar(55, 215, 255), thresh); // artificial
+    //inRange(HSV, Scalar(31, 55, 70), Scalar(66, 255, 197), thresh); // renders
+    inRange(HSV, Scalar(35, 100, 0), Scalar(55, 215, 255), thresh); // artificial
     //inRange(HSV, Scalar(31, 55, 45), Scalar(68, 255, 206), thresh);
     
     if(debugDisplay) imshow("thresh af", thresh);
@@ -655,7 +655,7 @@ vector<Vec4f> getLines()
                     if(count <= 5){ // If previous run of black pixels was 3 or less, leave them alone
                         count = 0;
                     } else if(count != 0){
-                        //for(int j = 0; j <= count; j++) closed.at<uchar>(i-j, closed.cols-1) = 255;
+                        for(int j = 0; j <= count; j++) closed.at<uchar>(i-j, closed.cols-1) = 255;
                         
                         count = 0;
                     }
@@ -669,17 +669,18 @@ vector<Vec4f> getLines()
         vector<vector<cv::Point> > contours;
         
         findContours(closed, contours, RETR_TREE, CHAIN_APPROX_SIMPLE);
-        boundary = Mat(1080, 1920, CV_8UC1, Scalar(0,0,0));
+        boundary = Mat(1080, 1920, CV_8UC1, Scalar(0));
         
         Mat threshClosed;
+        kernel = Mat(12, 3, CV_8U, Scalar(1));
         morphologyEx(thresh, threshClosed, MORPH_DILATE, kernel);
         vector<vector<cv::Point> > findBound;
         findContours(threshClosed, findBound, RETR_TREE, CHAIN_APPROX_SIMPLE);
         drawContours(boundary, findBound, getMaxAreaContourId(findBound), Scalar(255,0,255), -1);
         //Mat cont;
         //cvtColor(closed, cont, COLOR_GRAY2BGR);
-        
-        imshow("BOUNDARY", boundary);
+        morphologyEx(boundary, boundary, MORPH_DILATE, kernel);
+        //imshow("BOUNDARY", boundary);
         
         Mat mask = Mat::ones( thresh.rows, thresh.cols, CV_8U);
         //drawContours(mask, contours, getMaxAreaContourId(contours), Scalar(255,255,255), -1);
@@ -706,7 +707,7 @@ vector<Vec4f> getLines()
     GaussianBlur( thresh, invdst, Size( 5, 5 ), 0, 0 );
     //imshow("gauss", invdst);
     Canny(invdst, dst, 50, 200, 5);
-    imshow("canny", dst);
+    //imshow("canny", dst);
     //Remove 1px columns from the sides if mask used
     if(useMask){
         for(int i = 0; i < dst.rows; i++){
@@ -725,7 +726,9 @@ vector<Vec4f> getLines()
     }
     vector<Vec4f> lines;
     HoughLinesP(dst, lines, 2, CV_PI/360, 150, 175, 45 );
+    //HoughLinesP(dst, lines, 2, CV_PI/360, 100, 75, 45 );
     
+    //cout << lines.size() << " lines\n";
     for(int i = 0; i < lines.size(); i++ ){
         Scalar colour = Scalar( ( rand() % (int) ( 255 + 1 ) ), ( rand() % (int) ( 255 + 1 ) ), ( rand() % (int) ( 255 + 1 ) ));
          line( cdst, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), colour, 5, 0);
@@ -1157,13 +1160,13 @@ Mat newClustering(Mat in, vector<Vec4f>& lines){
                 
                 if(x < 192 && y < 54 && x >= 0 && y >= 0){
                     //cout << "incrementing (" << x << ","<< y<< ") \t\t " << intr << endl;;
-                    //if( boundary.at<uchar>( intr.x, intr.y) == 0 ){
-                        //cout << "woo hah" << endl;
-                        line(in, Point(intr.x, intr.y-1), Point(intr.x, intr.y+1), Scalar(0,255,0), 4);
+                    if( boundary.at<uint>( intr.y, intr.x) == 0 ){
+
+                        line(in, Point(intr.x, intr.y-1), Point(intr.x, intr.y+1), Scalar(0,255,255), 4);
                     
                         cells[x][y]++;
                         vanishingPoints.push_back( intr2D );
-                    //}
+                    }
                 }
             }
         }
@@ -1181,7 +1184,8 @@ Mat newClustering(Mat in, vector<Vec4f>& lines){
     }
     
     //cout << "Max cell: " << maxCell << ", with size: "<< max << endl;
-    int cellRange = 2; // Expand search beyond identified cell to account for any slight errors
+    int cellRangeH = 6; // Expand search beyond identified cell to account for any slight errors
+    int cellRangeV = 1;
     for(int i = 0; i < lines.size(); i++){
         bool flag = false;
         for(int j = 0; j < lines.size(); j++){
@@ -1189,9 +1193,9 @@ Mat newClustering(Mat in, vector<Vec4f>& lines){
                 Point3f intr = intersect(lines[i], lines[j]);
                 int x = intr.x/10;
                 int y = intr.y/10;
-                if(x >= maxCell.x-cellRange && x <= maxCell.x+cellRange
-                   && y >= maxCell.y-cellRange && y <= maxCell.y+cellRange){
-                    
+                if(x >= maxCell.x-cellRangeH && x <= maxCell.x+cellRangeH
+                   && y >= maxCell.y-cellRangeV && y <= maxCell.y+cellRangeV){
+                    line(in, Point(intr.x, intr.y-1), Point(intr.x, intr.y+1), Scalar(255,0,255), 4);
                     verticals.push_back(lines[i]);
                     flag = true;
                     break;
@@ -1222,7 +1226,7 @@ Mat newClustering(Mat in, vector<Vec4f>& lines){
     int lowestMid = -1;
     int lowestLine = -1;
     
-    int horizThresh = 50; // Max horizontal distance between lines before they're split into separate clusters
+    int horizThresh = 70; // Max horizontal distance between lines before they're split into separate clusters
     
     for(int i = 0; i < lines.size(); i++){
         if( getCenter(lines[i])[1] > lowestMid && getCenter(lines[i])[1] < src.rows - 25 ){ // && an extra hack to avoid the bottom edge of the image getting detected
@@ -1250,7 +1254,7 @@ Mat newClustering(Mat in, vector<Vec4f>& lines){
             if( topH == -1 || getCenter(lines[i])[1] < topH) topH = getCenter(lines[i])[1] ;
             if( bottomH == -1 || getCenter(lines[i])[1] > bottomH) bottomH = getCenter(lines[i])[1] ;
             grad += getGradient(lines[i]);
-            horizontalCount++;
+            //horizontalCount++;
         } else {
             //line(in, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(255,0,0));
             //verticals.push_back(lines[i]);
