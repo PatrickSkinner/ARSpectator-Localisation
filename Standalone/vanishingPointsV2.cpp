@@ -1247,11 +1247,31 @@ Mat newClustering(Mat in, vector<Vec4f>& lines){
             horizontalCount++;
             //horiAngles += getAngle(lines[i]);
             //cout << getAngle(lines[i]) << endl;
+            line(in, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(255,0,255), 5);
         }
     }
     //cout << endl;
-    int median = getAngle(horizontals[horizontals.size()/2]);
-    //median = 5;
+    
+    int numFreq [180] = {};
+    for(int i = 0; i < horizontals.size(); i++){
+        int c = ceil( getAngle(horizontals[i]) );
+        if( c > 170 ) c = abs(c- 180);
+        numFreq[c]++;
+    }
+    
+    int maxNum = 0;
+    int maxIndex = -1;
+    for(int i = 0; i < 180; i++){
+        if( numFreq[i] > maxNum ){
+            maxIndex = i;
+            maxNum = numFreq[i];
+        }
+    }
+    
+    int median = maxIndex;
+    
+    //int median = getAngle(horizontals[horizontals.size()/2]);
+    //median = 179;
     //cout << "median horizontal: " << median << "\t index: " << horizontals.size()+1/2 << endl;
     vector<Vec4f> cleanedHorizontals;
     
