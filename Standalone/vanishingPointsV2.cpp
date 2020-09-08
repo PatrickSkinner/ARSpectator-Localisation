@@ -23,10 +23,10 @@ bool useMask = true;
 bool mirrorInput = false;
 bool rotateInput = false;
 
-bool debugDisplay = true;
+bool debugDisplay = false;
 bool outputDisplay = true;
 bool getPose = true;
-bool getReprojection = true;
+bool getReprojection = false;
 
 Mat src;
 Mat HSV;
@@ -38,7 +38,7 @@ String filename = "0002.png";
 String imageSet = "Set1.txt";
 Point2f clickCoords = Point2f(640,900);
 int selectedLine = 0; // 0 = leftmost, 1 = center, 2 = rightmost
-bool guiMode = true;
+bool guiMode = false;
 
 float baseline = -1;
 int blThresh = 14;
@@ -1194,7 +1194,6 @@ Mat newClustering(Mat in, vector<Vec4f>& lines){
                     //cout << "incrementing (" << x << ","<< y<< ") \t\t " << intr << endl;;
                     if( intr.x < 0 || intr.x >= 1920 || intr.y < 0 || intr.y >= 1080 || colorBound.at<Vec3b>( intr.y, intr.x) == Vec3b(0,0,0) ){
                         //line(in, Point(intr.x, intr.y-1), Point(intr.x, intr.y+1), Scalar(0,255,255), 4);
-                        
                         cells[x][y]++;
                         vanishingPoints.push_back( intr2D );
                         /*
@@ -1557,10 +1556,10 @@ bool isMatched(int n, vector<Vec4f> lines, vector<Match> matches){
 ////////////////////////////////////////////////////////////////////////////////
 
 int main( int argc, char** argv){
-    
     clock_t start, end;
     double elapsed;
     start = clock();
+    auto t1 = std::chrono::steady_clock::now();
     
     Mat gtPose = Mat();
     Mat rVecGT;
@@ -1687,7 +1686,9 @@ int main( int argc, char** argv){
             //cout << "Click Coords: " << clickCoords << "\tline: " << selectedLine << endl;
         }
     }
-    start = clock();
+    //start = clock();
+    
+    //auto t1 = std::chrono::steady_clock::now();
     
     vector<Vec4f> rawLines = getLines();
     if(rotateInput){
@@ -2171,14 +2172,19 @@ int main( int argc, char** argv){
     }
     
     
-    end = clock();
-    elapsed = ((double) (end - start)) / CLOCKS_PER_SEC;
-    //cout << elapsed << endl;
+    //end = clock();
+    //elapsed = ((double) (end - start)) / CLOCKS_PER_SEC;
+    //cout << "Clock time: " << elapsed << endl;
+    
+    auto t2 = std::chrono::steady_clock::now();
+    //std::cout << "Chrono time: " << std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count() << " milliseconds\n";
+    
+    cout << chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count();// << endl;
     
     if(debugDisplay) imshow("Cleaned Lines", src);
     if(outputDisplay || debugDisplay){
         imshow("Finale", finale);
-        waitKey();
+        //waitKey();
     }
     //imshow("TEMPLATE", templateWarped);
     
