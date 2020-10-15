@@ -104,7 +104,8 @@ vector<Vec4f> getLines(Mat src, bool autoThresh = true, bool useMask = true)
         vector<vector<cv::Point> > contours;
         
         findContours(closed, contours, RETR_TREE, CHAIN_APPROX_SIMPLE);
-        Mat boundary = Mat(1080, 1920, CV_8UC1, Scalar(0));
+        extern Mat boundary;
+        boundary = Mat(1080, 1920, CV_8UC1, Scalar(0));
         
         Mat threshClosed;
         kernel = Mat(12, 12, CV_8U, Scalar(1));
@@ -130,8 +131,7 @@ vector<Vec4f> getLines(Mat src, bool autoThresh = true, bool useMask = true)
             if(mask.at<uchar>(i, 1) > 0) mask.at<uchar>(i, 0) = 0;
             if(mask.at<uchar>(i, closed.cols-2) > 0) mask.at<uchar>(i, closed.cols-1) = 0;
         }*/
-        
-        cout << "Boundary is empty? " << boundary.empty() << endl;
+
         thresh = mask;
     }
 

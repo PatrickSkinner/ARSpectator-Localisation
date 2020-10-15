@@ -60,7 +60,6 @@ Mat clusterLines(Mat in, vector<Vec4f>& lines){
 
     Mat colorBound;
     extern Mat boundary;
-    cout << "Boundary is empty? " << boundary.empty() << endl;
     cvtColor(boundary, colorBound, COLOR_GRAY2BGR);
     
     // Using voting scheme to determine which cell corresponds to the dominant vanishing point.
