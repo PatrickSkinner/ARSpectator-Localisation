@@ -16,6 +16,7 @@
 using namespace cv;
 using namespace std;
 
+extern bool debugDisplay;
 Vec4f divider;
 
 /** Trim length of lines down to the intersection points
@@ -51,6 +52,7 @@ vector<Vec4f> trimLines(vector<Vec4f> inputLines){
     
     return outputLines;
 }
+
 
 Mat clusterLines(Mat in, vector<Vec4f>& lines){
     Mat labels;
@@ -152,7 +154,7 @@ Mat clusterLines(Mat in, vector<Vec4f>& lines){
     }
     horizontals = cleanedHorizontals;
     
-    if(true) imshow("cluster", in);
+    //if(debugDisplay) imshow("cluster", in);
     
     int topH = -1;
     int bottomH = -1;
@@ -299,7 +301,7 @@ Mat clusterLines(Mat in, vector<Vec4f>& lines){
         lastX = x;
     }
     
-    if(true) imshow("clustered", in);
+    if(debugDisplay) imshow("clustered", in);
     //waitKey();
     
     horizontals.insert( horizontals.end(), verticals.begin(), verticals.end() ); //
@@ -322,7 +324,6 @@ Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center, bool isHori){
     float closestDist = 99999;
     
     float searchRange = 15;
-    cout << "div: " << divider << endl;
     
     for(int i = 0; i < inputLines.size(); i++){
         avgX += getCenter(inputLines[i])[0];
@@ -451,7 +452,6 @@ vector<Vec4f> cleanLines(vector<Vec4f> sortedLines, Mat labels){
                 lines.push_back( Vec4f(sortedLines[j][0], sortedLines[j][1], sortedLines[j][2], sortedLines[j][3]));
             }
         }
-        cout << endl;
         
         bool isHori = false;
         if(i == 0 || i == 1){
@@ -463,7 +463,6 @@ vector<Vec4f> cleanLines(vector<Vec4f> sortedLines, Mat labels){
         cleanedLines.push_back( pushLine );
         
         line( src, Point(pushLine[0], pushLine[1]), Point(pushLine[2], pushLine[3]), Scalar(0,128,255), 4, 0);
-        //imshow("ah " + to_string(i) , src);
     }
 
     cleanedLines = trimLines(cleanedLines);
@@ -626,3 +625,4 @@ vector<Match> findMatches( vector<Vec4f> detectedLines, vector<Vec4f> templateLi
     
     return bestMatches;
 }
+

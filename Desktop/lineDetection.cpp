@@ -17,6 +17,8 @@
 using namespace std;
 using namespace cv;
 
+extern bool debugDisplay;
+
 /** Return vector of all detected Hough lines in given image */
 vector<Vec4f> getLines(Mat src, bool autoThresh = true, bool useMask = true)
 {
@@ -43,7 +45,7 @@ vector<Vec4f> getLines(Mat src, bool autoThresh = true, bool useMask = true)
         
         Mat masked;
         src.copyTo(masked, hOnly);
-        imshow("mask", masked);
+        //imshow("mask", masked);
 
         Mat HSVmask;
         cvtColor(masked, HSVmask, COLOR_BGR2HSV);
@@ -133,6 +135,7 @@ vector<Vec4f> getLines(Mat src, bool autoThresh = true, bool useMask = true)
         }*/
 
         thresh = mask;
+        if(debugDisplay) imshow("Pitch Segmentation", thresh);
     }
 
     
@@ -225,7 +228,7 @@ int histThreshold(Mat inputImg, Mat& outputImg, int channel){
                 maxIndex = i;
             }
         }
-        cout << "max index: " << maxIndex << " \t - \t " << max << endl;
+        //cout << "max index: " << maxIndex << " \t - \t " << max << endl;
         threshMid = maxIndex;
         
         inRange(inputImg, Scalar(threshMid-hRange, 0, 0), Scalar(threshMid+hRange, 255, 215), outputImg);
@@ -238,7 +241,7 @@ int histThreshold(Mat inputImg, Mat& outputImg, int channel){
                 maxIndex = i;
             }
         }
-        cout << "max index: " << maxIndex*(255.0/180.0) << " \t - \t " << max << endl;
+        //cout << "max index: " << maxIndex*(255.0/180.0) << " \t - \t " << max << endl;
         inRange(inputImg, Scalar(0, maxIndex-55, 0), Scalar(255, maxIndex+50, 215), outputImg);
     }
     

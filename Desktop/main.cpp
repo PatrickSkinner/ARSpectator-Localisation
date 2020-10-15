@@ -30,6 +30,7 @@ bool debugDisplay = true;
 bool outputDisplay = true;
 bool getPose = true;
 bool getReprojection = true;
+bool getTiming = false;
 
 bool autoThresh = true;
 int hRange = 10;
@@ -72,9 +73,7 @@ void onMouse( int event, int x, int y, int, void* )
 }
 
 int main( int argc, char** argv){
-    clock_t start, end;
-    double elapsed;
-    start = clock();
+
     auto t1 = std::chrono::steady_clock::now();
     
     Mat gtPose = Mat();
@@ -131,10 +130,6 @@ int main( int argc, char** argv){
             }
             
             gtPose = gtPose.reshape(4,4);
-            //cout << "Ground Truth Mat:\n" << gtPose << endl;
-            //cout << "\n";
-            
-            
             
             Mat rMatGT = (Mat_<float>(3,3) <<  gtPose.at<float>(0,0), gtPose.at<float>(0,1), gtPose.at<float>(0,2),
                                                 gtPose.at<float>(1,0), gtPose.at<float>(1,1), gtPose.at<float>(1,2),
@@ -142,19 +137,6 @@ int main( int argc, char** argv){
             
             
             Rodrigues(rMatGT, rVecGT);
-            /*
-            for(int i = 0; i < 3; i++){
-                cout << gtPose.at<float>(i, 3);
-                if(i != 2) cout << ", " ;
-            }
-            cout << endl << endl;
-            for(int i = 0; i < 3; i++){
-                cout << rVecGT.at<float>(i)*(180/CV_PI);
-                if(i != 2) cout << ", " ;
-            }
-            */
-            
-            //cout << endl << endl;
         }
     }
     
@@ -452,7 +434,7 @@ int main( int argc, char** argv){
         line( warp, Point(tempMid[0], tempMid[1]), Point(matchMid[0], matchMid[1]), Scalar(0,255,100), 2, 0);
     }
     
-    if(debugDisplay) imshow("warp", warp);
+    if(debugDisplay) imshow("Template to Line Matches", warp);
     //waitKey();
     
     
@@ -602,7 +584,7 @@ int main( int argc, char** argv){
             
         for( int i = 0; i < out.size(); i += 2){
             //line( finale, Point(in[i].x, in[i].y), Point(in[i+1].x, in[i+1].y), Scalar(0,255,255), 2, 0);
-            //line( finale, Point(out[i].x, out[i].y), Point(out[i+1].x, out[i+1].y), Scalar(0,0,255), 4, 0);
+            line( finale, Point(out[i].x, out[i].y), Point(out[i+1].x, out[i+1].y), Scalar(255,0,255), 2, 0);
             //cout << Point(in[i].x, in[i].y) << "\t" << Point(in[i+1].x, in[i+1].y) << endl;
             //cout << Point(out[i].x, out[i].y) << "\t" << Point(out[i+1].x, out[i+1].y) << endl << endl << endl;
         }
@@ -633,7 +615,7 @@ int main( int argc, char** argv){
                                                     0, 0, 1);
             
             solvePnP(objPoints, imgPoints, cameraMatrix, distCoeffs, rVec, tVec);
-            drawFrameAxes(finale, cameraMatrix, distCoeffs, rVec, tVec, 50);
+            drawFrameAxes(finale, cameraMatrix, distCoeffs, rVec, tVec, 50, 5);
             
             vector<Mat> rot, tran, norm;
             //decomposeHomographyMat(homography, cameraMatrix, rot, tran, norm);
@@ -689,16 +671,11 @@ int main( int argc, char** argv){
         }
     }
     
-    
-    //end = clock();
-    //elapsed = ((double) (end - start)) / CLOCKS_PER_SEC;
-    //cout << "Clock time: " << elapsed << endl;
-    
-    auto t2 = std::chrono::steady_clock::now();
-    //std::cout << "Chrono time: " << std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count() << " milliseconds\n";
-    
-    //cout << chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count();// << endl;
-    
+    if(getTiming){
+        auto t2 = std::chrono::steady_clock::now();
+        std::cout << "Chrono time: " << std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count() << " milliseconds\n";
+    }
+        
     if(debugDisplay) imshow("Cleaned Lines", src);
     if(outputDisplay || debugDisplay){
         imshow("Finale", finale);
