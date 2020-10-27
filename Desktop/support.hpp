@@ -48,3 +48,5 @@ bool compareVec(Vec4f v1, Vec4f v2);
 float minimum_distance(Vec4f lineIn, Point2f p);
 
 bool isMatched(int n, std::vector<Vec4f> lines, std::vector<Match> matches);
+
+float getSpan(std::vector<Vec4f> lines);

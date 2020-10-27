@@ -131,3 +131,131 @@ bool isMatched(int n, vector<Vec4f> lines, vector<Match> matches){
     }
     return false;
 }
+
+
+/** Compare lines by leftmost x coordinate for sorting purposes*/
+bool compareVecByX(Vec4f v1, Vec4f v2)
+{
+    float leftmostV1 = v1[0];
+    if( v1[2] < v1[0] ) leftmostV1 = v1[2];
+    float leftmostV2 = v2[0];
+    if( v2[2] < v2[0] ) leftmostV2 = v2[2];
+    
+    return (leftmostV1 < leftmostV2);
+}
+
+float getSpan( vector<Vec4f> lines){
+    cout << "lines: " << lines.size() << endl;
+    vector<Vec4f> sortedLines = lines;
+    sort(sortedLines.begin(), sortedLines.end(), compareVecByX);
+    
+    float span = 0;// abs( sortedLines[0][2] - sortedLines[0][0] );
+    float tempS = sortedLines[0][0];
+    float tempE = sortedLines[0][2];
+    
+    bool flag = false; // flag = true when span was incremented with previous iteration.
+    
+    cout << "Line: " << tempS << "\t-\t" << tempE << endl;
+    
+    for(int i = 1; i < sortedLines.size(); i++){
+        float start = sortedLines[i][0];
+        float end = sortedLines[i][2];
+        cout << "Line: " << start << "\t-\t" << end << endl;
+        
+        if( start < tempE && end > tempE){ // merge by setting new end point
+            tempE = end;
+            flag = false;
+        } else if ( start > tempS && end > tempE){ // split clusters
+            cout << " Span += " << tempE - tempS << "\t" << tempE << " - " << tempS << endl;
+            span += ( tempE - tempS);
+            tempE = end;
+            tempS = start;
+            if(i < sortedLines.size()-1){
+                flag = true;
+            } else {
+                flag = false;
+            }
+        } else {
+            flag = false;
+        }
+
+    }
+    
+    if(!flag){
+        //cout << "final increment" << endl;
+        cout << " Span += " << tempE - tempS << "\t" << tempE << " - " << tempS << endl;
+        span += (tempE - tempS);
+    }
+    return span;
+}
+
+
+/*
+ float getSpan( vector<Vec4f> lines){
+     cout << "lines: " << lines.size() << endl;
+     vector<Vec4f> sortedLines = lines;
+     sort(sortedLines.begin(), sortedLines.end(), compareVecByX);
+     
+     float span = 0;// abs( sortedLines[0][2] - sortedLines[0][0] );
+     float tempS = sortedLines[0][0];
+     float tempE = sortedLines[0][2];
+     
+     bool flag = false; // flag = true when span was incremented with previous iteration.
+     
+     cout << "Line: " << tempS << "\t-\t" << tempE << endl;
+     
+     for(int i = 1; i < sortedLines.size(); i++){
+         //cout << "\n----------------------\n";
+         Vec4f lastLine = sortedLines[i-1];
+         Vec4f currentLine = sortedLines[i];
+         
+         float s1 = lastLine[0];
+         float e1 = lastLine[2];
+         float s2 = currentLine[0];
+         float e2 = currentLine[2];
+         //cout << s1 << " - " << e1 << endl;
+         //cout << s2 << " - " << e2 << endl;
+         cout << "Line: " << s2 << "\t-\t" << e2 << endl;
+         
+         if ( s2 <= e1 && e2 >= e1){
+             tempE = e2;
+             cout << "merge 1 \n";
+             flag = false;
+         } else if (s2 <= s1 && e2 <= e1 ){
+             tempE = e1;
+             cout << "merge 2\n";
+             flag = false;
+         } else if ( s2 > e1 && e2 > e1 && s2 > tempE){
+             // increment span
+             cout << "tempE : " << tempE << "\t e1: " << e1 << endl;
+             if( tempE < e1){
+                 cout << "split1 \t +" << e1 - tempS << "\n";
+                 span += ( e1 - tempS);
+             } else {
+                 cout << "split2 \t +" << tempE - tempS << "\n";
+                 span += ( tempE - tempS);
+             }
+             tempS = s2;
+             tempE = e2;
+             if(i < sortedLines.size()-1){
+                 flag = true;
+             } else {
+                 flag = false;
+             }
+         } else {
+             //cout << "no action\n";
+             flag = false;
+         }
+     }
+     
+     if(!flag){
+         //cout << "final increment" << endl;
+         span += (tempE - tempS);
+     }
+     return span;
+ }
+
+ 
+ 
+ */
+ 

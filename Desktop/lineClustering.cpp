@@ -55,6 +55,7 @@ vector<Vec4f> trimLines(vector<Vec4f> inputLines){
 
 
 Mat clusterLines(Mat in, vector<Vec4f>& lines){
+    cout << "Lines: " << lines.size() << endl;
     Mat labels;
     vector<Vec4f> horizontals;
     vector<Vec4f> verticals;
@@ -64,26 +65,30 @@ Mat clusterLines(Mat in, vector<Vec4f>& lines){
     extern Mat boundary;
     cvtColor(boundary, colorBound, COLOR_GRAY2BGR);
     
+    extern Mat src;
+    Mat vp = src.clone();
+    
     // Using voting scheme to determine which cell corresponds to the dominant vanishing point.
     vector<Point2f> vanishingPoints;
     const int cellsX = 192;
     const int cellsY = 108;
-    int cells [cellsX*2][cellsY*2]{};
+    int cells [cellsX*3][cellsY*3]{};
+   
     for(int i = 0; i < lines.size(); i++){
         for(int j = 0; j < lines.size(); j++){
-            if( i != j ){
-                Point3f intr = intersect(lines[i], lines[j]);
-                Point2f intr2D = Point2f(intr.x, intr.y);
-
-                int x = (intr.x/10);
-                int y = (intr.y/10);
+            if(i != j){
+                Point2f intr = Point2f( intersect(lines[i], lines[j])[0], intersect(lines[i], lines[j])[1] );
+                intr.x += 1920;
+                intr.y += 1080;
                 
-                if(x < cellsX && y < cellsY/2 && x >= -cellsX && y >= -cellsY){
-                    x += cellsX;
-                    y += cellsY;
-                    if( intr.x < 0 || intr.x >= 1920 || intr.y < 0 || intr.y >= 1080 || colorBound.at<Vec3b>( intr.y, intr.x) == Vec3b(0,0,0) ){
-                        cells[x][y]++;
-                        vanishingPoints.push_back( intr2D );
+                if( intr.x > 0 && intr.x < 1920*3 && intr.y > 0 && intr.y < 1080*3){
+                    int cX = intr.x/10;
+                    int cY = intr.y/10;
+                    
+                    if( intr.x < 1920 || intr.x >= 1920*2 || intr.y < 1080 || intr.y >= 1080*2 || colorBound.at<Vec3b>( intr.y-1080, intr.x-1920) == Vec3b(0,0,0) ){
+                        cells[cX][cY]++;
+                        vanishingPoints.push_back(intr);
+                        line(in, Point2f(intr.x-1919, intr.y-1079), Point2f(intr.x-1921, intr.y-1081), Scalar(0,255,0), 5);
                     }
                 }
             }
@@ -92,19 +97,22 @@ Mat clusterLines(Mat in, vector<Vec4f>& lines){
     
     int max = 0;
     Point2f maxCell;
-    for(int i = 0; i < cellsX*2; i++){
-        for(int j = 0; j < cellsY*2; j++){
-            if( cells[i][j] > max ){
-                max = cells[i][j];
-                maxCell = Point2f(i,j);
-                
+    for(int i = 0; i < cellsX*3; i++){
+        for(int j = 0; j < cellsY*3; j++){
+            if( cells[i][j] > max  ){
+                if(j < (cellsY*3)/2 ){
+                    max = cells[i][j];
+                    maxCell = Point2f(i,j);
+                }
             }
         }
     }
     
+
     int cellRangeH = 6; // Expand search beyond identified cell to account for any slight errors
     int cellRangeV = 1;
     for(int i = 0; i < lines.size(); i++){
+        cout << i;
         bool flag = false;
         for(int j = 0; j < lines.size(); j++){
             if( i != j ){
@@ -114,6 +122,7 @@ Mat clusterLines(Mat in, vector<Vec4f>& lines){
                 if(x >= maxCell.x-cellRangeH && x <= maxCell.x+cellRangeH
                    && y >= maxCell.y-cellRangeV && y <= maxCell.y+cellRangeV){
                     verticals.push_back(lines[i]);
+                    line(in, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(255,255,0), 5);
                     flag = true;
                     break;
                 }
@@ -124,6 +133,7 @@ Mat clusterLines(Mat in, vector<Vec4f>& lines){
             horizontalCount++;
             line(in, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(255,0,255), 5);
         }
+            cout << endl;
     }
     
     // Find the most common angle for horizontal lines
@@ -154,7 +164,8 @@ Mat clusterLines(Mat in, vector<Vec4f>& lines){
     }
     horizontals = cleanedHorizontals;
     
-    //if(debugDisplay) imshow("cluster", in);
+    //rectangle(in, Point2f( (maxCell.x*10)-1920, (maxCell.y*10)-1080), Point2f( (maxCell.x*10)+60-1920, (maxCell.y*10)+60-1080), Scalar(255,255,255), 5, 1);
+    imshow("cluster", in);
     
     int topH = -1;
     int bottomH = -1;
@@ -211,13 +222,21 @@ Mat clusterLines(Mat in, vector<Vec4f>& lines){
     avgMidX /= horizontals.size();
     divider = Vec4f(avgMidX, 0, avgMidX, 1080);
     
+    vector<Vec4f> lineCluster;
+    
+    // Replace this later
     for(int i = 0; i < horizontals.size(); i++){
         int y = intersect( horizontals[i], divider)[1];
         
         if( lastY != -1 && abs(y - lastY) > vertThresh){
             colour = Scalar( ( rand() % (int) ( 255 + 1 ) ), ( rand() % (int) ( 255 + 1 ) ), ( rand() % (int) ( 255 + 1 ) ));
             cluster++;
-            ranges.push_back( largestX - smallestX);
+            //ranges.push_back( largestX - smallestX);
+            float span = getSpan(lineCluster);
+            ranges.push_back(span);
+            cout << "Span: " << span << endl;
+            cout << "New Cluster ======================================\n\n";
+            lineCluster.clear();
             smallestX = -1;
             largestX = -1;
         }
@@ -230,17 +249,20 @@ Mat clusterLines(Mat in, vector<Vec4f>& lines){
         horiLabels.push_back(cluster);
         
         lastY = y;
+        
+        lineCluster.push_back(horizontals[i]);
     }
 
-    ranges.push_back( largestX - smallestX);
-
-    
+    //ranges.push_back( largestX - smallestX);
+    float span = getSpan(lineCluster);
+    ranges.push_back(span);
+    cout << "Span: " << span << endl;
     vector<Vec4f> recleanedHorizontals;
     bool topFound = false;
     bool botFound = false;
     int minRange = 1800;
     
-    // Find the largest horizontal lines above and below the divider
+    // Find the largest horizontal line spans above and below the divider
     while( !topFound || !botFound ){
         bool matched = false;
         for( int cluster = 0; cluster <= horiLabels[horiLabels.size()-1 ]; cluster++){
@@ -431,6 +453,8 @@ Vec4f fitBestLine( vector<Vec4f> inputLines, Vec2f center, bool isHori){
 vector<Vec4f> cleanLines(vector<Vec4f> sortedLines, Mat labels){
     int clusterCount = labels.at<int>(labels.rows-1) + 1;
     vector<Vec4f> cleanedLines;
+    
+    cout << "Lines: " << sortedLines.size()<<endl;
     
     int centroidX = 0;
     int centroidY = 0;

@@ -39,7 +39,6 @@ int threshMid = 0;
 //Mat src;
 Mat HSV;
 Mat thresh;
-Mat finuks;
 
 String filename = "0002.png";
 String imageSet = "Set1.txt";
@@ -117,7 +116,6 @@ int main( int argc, char** argv){
                     if(flag && lCount < 19){
                         if(nextLine != ""){
                             gtPose.push_back( stof(nextLine) );
-                            //cout << nextLine << endl;
                         }
                         lCount++;
                     }
@@ -132,20 +130,16 @@ int main( int argc, char** argv){
             gtPose = gtPose.reshape(4,4);
             
             Mat rMatGT = (Mat_<float>(3,3) <<  gtPose.at<float>(0,0), gtPose.at<float>(0,1), gtPose.at<float>(0,2),
-                                                gtPose.at<float>(1,0), gtPose.at<float>(1,1), gtPose.at<float>(1,2),
-                                                gtPose.at<float>(2,0), gtPose.at<float>(2,1), gtPose.at<float>(2,2));
-            
+                                               gtPose.at<float>(1,0), gtPose.at<float>(1,1), gtPose.at<float>(1,2),
+                                               gtPose.at<float>(2,0), gtPose.at<float>(2,1), gtPose.at<float>(2,2));
             
             Rodrigues(rMatGT, rVecGT);
         }
     }
     
-    
-    
     src = imread(filename);
     if(mirrorInput) flip(src, src, +1);
     Mat finale = src.clone();
-    finuks = src.clone();
     
     while(!src.data){
         cout << "." << endl;
@@ -169,7 +163,6 @@ int main( int argc, char** argv){
                 count++;
             }
             
-            
             vector<string> result;
             stringstream s_stream(nextLine); //create string stream from the string
             while(s_stream.good()) {
@@ -180,8 +173,6 @@ int main( int argc, char** argv){
             clickCoords = Point2f(stoi(result[0]),stoi(result[1]) );
             selectedLine = stoi(result[2]);
             groundTruth.close();
-            
-            //cout << "Click Coords: " << clickCoords << "\tline: " << selectedLine << endl;
         }
     }
     //start = clock();
@@ -208,7 +199,6 @@ int main( int argc, char** argv){
     sort(sortedLines.begin(), sortedLines.end(), compareVec); // Sort lines by gradient
     
     Mat labels = clusterLines(src.clone(), sortedLines);
-    //Mat labels = clusterLines(sortedLines);
     vector<Vec4f> lines = cleanLines(sortedLines, labels);
     
     vector<Vec4f> rectifiedLines;
@@ -232,9 +222,7 @@ int main( int argc, char** argv){
     float templateHeight = lineLength( templateLines[0] );
     float rectifiedLinesHeight = lineLength(rectifiedLines[rectifiedLines.size() - 1]);
     float diff = templateHeight/rectifiedLinesHeight;
-    //cout << "diff: " << diff << endl;
-    
-    //diff = 3;
+
     diff = 1080/rectifiedLinesHeight;
     Mat scaling = Mat(3, 3, CV_32F, Scalar(0));
     scaling.at<float>(0,0) = diff;
