@@ -252,7 +252,8 @@ int main( int argc, char** argv){
     
     
     Vec4f horiz = Vec4f(0, 540+260, 1920, 540+260 );
-    //line(src, Point(0,540) , Point(1920,540), Scalar(255,255,255), 3);
+    extern Vec4f divider;
+    //line(src, Point(0,540+260) , Point(1920,540+260), Scalar(255,255,255), 8);
     
     if(selectedLine == 0 ){ // left
         // First vertical line matched is the line clicked by the user
@@ -266,6 +267,10 @@ int main( int argc, char** argv){
         }
         bestMatches.push_back( Match( templateLines[0], lines[closest], 666) );
         
+        Vec3f firstMP = intersect( lines[closest], divider );
+        Vec3f secondMP;
+        float firstDist; // Distance between first matched line and the second
+        
         for(int i = 1; i < templateLines.size() - 2; i++){
             int index = -1;
             int minDist = -1;
@@ -276,21 +281,26 @@ int main( int argc, char** argv){
                     if( abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]) < minDist || minDist == -1 ){
                         // Check if not already matched
                         if( !isMatched(j, lines, bestMatches) ){
-                            /*
-                            cout << lines[j] << "   hasn't been matched yet" << endl;
-                            cout << "and is to the right of " << bestMatches[bestMatches.size()-1].l2 << endl;
-                            cout << intersect(lines[j], horiz) << " > " << intersect(bestMatches[bestMatches.size()-1].l2, horiz)<< endl << endl;
-                            
-                            cout << "and the distance to the last line is " << abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]) << " which is less than " << minDist<< endl
-                                << intersect(lines[j], horiz)[0] << " to " << intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]<< endl;
-                            */
-                            minDist = abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]);
-                            index = j;
+                            if(i != 2){
+                                minDist = abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]);
+                                index = j;
+                            } else {
+                                Vec3f thirdMP = intersect(lines[j], divider);
+                                float secondDist = lineLength( Vec4f( secondMP[0], secondMP[1], thirdMP[0], thirdMP[1]));
+                                if( secondDist > firstDist*1.5 ){
+                                    minDist = abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]);
+                                    index = j;
+                                }
+                            }
                         }
                     }
                 }
             }
             bestMatches.push_back( Match( templateLines[i], lines[index], 666) );
+            if(i == 1){
+                secondMP = intersect(lines[index], divider);
+                firstDist = lineLength( Vec4f( firstMP[0], firstMP[1], secondMP[0], secondMP[1]));
+            }
         }
     } else if (selectedLine == 1){ // center
         // First vertical line matched is the line clicked by the user
@@ -303,6 +313,7 @@ int main( int argc, char** argv){
             }
         }
         bestMatches.push_back( Match( templateLines[1], lines[closest], 666) );
+
         
         // Find line right of center
         int index = -1;
@@ -360,6 +371,10 @@ int main( int argc, char** argv){
         }
         bestMatches.push_back( Match( templateLines[2], lines[closest], 666) );
         
+        Vec3f firstMP = intersect( lines[closest], divider );
+        Vec3f secondMP;
+        float firstDist; // Distance between first matched line and the second
+        
         for(int i = 1; i >= 0; i--){
             int index = -1;
             int minDist = -1;
@@ -371,13 +386,26 @@ int main( int argc, char** argv){
                     if( abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]) < minDist || minDist == -1 ){
                         // Check if not already matched
                         if( !isMatched(j, lines, bestMatches) ){
-                            minDist = abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]);
-                            index = j;
+                            if(i != 2){
+                                minDist = abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]);
+                                index = j;
+                            } else {
+                                Vec3f thirdMP = intersect(lines[j], divider);
+                                float secondDist = lineLength( Vec4f( secondMP[0], secondMP[1], thirdMP[0], thirdMP[1]));
+                                if( secondDist > firstDist*1.5 ){
+                                    minDist = abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]);
+                                    index = j;
+                                }
+                            }
                         }
                     }
                 }
             }
             bestMatches.push_back( Match( templateLines[i], lines[index], 666) );
+            if(i == 1){
+                secondMP = intersect(lines[index], divider);
+                firstDist = lineLength( Vec4f( firstMP[0], firstMP[1], secondMP[0], secondMP[1]));
+            }
         }
         
     }
