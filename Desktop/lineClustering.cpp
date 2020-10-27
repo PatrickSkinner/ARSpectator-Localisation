@@ -55,7 +55,7 @@ vector<Vec4f> trimLines(vector<Vec4f> inputLines){
 
 
 Mat clusterLines(Mat in, vector<Vec4f>& lines){
-    cout << "Lines: " << lines.size() << endl;
+    //cout << "Lines: " << lines.size() << endl;
     Mat labels;
     vector<Vec4f> horizontals;
     vector<Vec4f> verticals;
@@ -112,7 +112,6 @@ Mat clusterLines(Mat in, vector<Vec4f>& lines){
     int cellRangeH = 6; // Expand search beyond identified cell to account for any slight errors
     int cellRangeV = 1;
     for(int i = 0; i < lines.size(); i++){
-        cout << i;
         bool flag = false;
         for(int j = 0; j < lines.size(); j++){
             if( i != j ){
@@ -133,7 +132,6 @@ Mat clusterLines(Mat in, vector<Vec4f>& lines){
             horizontalCount++;
             line(in, Point(lines[i][0], lines[i][1]), Point(lines[i][2], lines[i][3]), Scalar(255,0,255), 5);
         }
-            cout << endl;
     }
     
     // Find the most common angle for horizontal lines
@@ -158,7 +156,7 @@ Mat clusterLines(Mat in, vector<Vec4f>& lines){
     
     // Discard any lines that aren't within 15 degrees of the median angle
     for(int i = 0; i < horizontals.size(); i++){
-        if( checkThreshold( getAngle(horizontals[i]), median, 15) ){
+        if( checkThreshold( getAngle(horizontals[i]), median, 20) ){
                 cleanedHorizontals.push_back(horizontals[i]);
             }
     }
@@ -234,8 +232,6 @@ Mat clusterLines(Mat in, vector<Vec4f>& lines){
             //ranges.push_back( largestX - smallestX);
             float span = getSpan(lineCluster);
             ranges.push_back(span);
-            cout << "Span: " << span << endl;
-            cout << "New Cluster ======================================\n\n";
             lineCluster.clear();
             smallestX = -1;
             largestX = -1;
@@ -256,7 +252,6 @@ Mat clusterLines(Mat in, vector<Vec4f>& lines){
     //ranges.push_back( largestX - smallestX);
     float span = getSpan(lineCluster);
     ranges.push_back(span);
-    cout << "Span: " << span << endl;
     vector<Vec4f> recleanedHorizontals;
     bool topFound = false;
     bool botFound = false;
@@ -454,7 +449,7 @@ vector<Vec4f> cleanLines(vector<Vec4f> sortedLines, Mat labels){
     int clusterCount = labels.at<int>(labels.rows-1) + 1;
     vector<Vec4f> cleanedLines;
     
-    cout << "Lines: " << sortedLines.size()<<endl;
+    //cout << "Lines: " << sortedLines.size()<<endl;
     
     int centroidX = 0;
     int centroidY = 0;

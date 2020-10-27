@@ -145,7 +145,7 @@ bool compareVecByX(Vec4f v1, Vec4f v2)
 }
 
 float getSpan( vector<Vec4f> lines){
-    cout << "lines: " << lines.size() << endl;
+    //cout << "lines: " << lines.size() << endl;
     vector<Vec4f> sortedLines = lines;
     sort(sortedLines.begin(), sortedLines.end(), compareVecByX);
     
@@ -155,18 +155,18 @@ float getSpan( vector<Vec4f> lines){
     
     bool flag = false; // flag = true when span was incremented with previous iteration.
     
-    cout << "Line: " << tempS << "\t-\t" << tempE << endl;
+    //cout << "Line: " << tempS << "\t-\t" << tempE << endl;
     
     for(int i = 1; i < sortedLines.size(); i++){
         float start = sortedLines[i][0];
         float end = sortedLines[i][2];
-        cout << "Line: " << start << "\t-\t" << end << endl;
+        //cout << "Line: " << start << "\t-\t" << end << endl;
         
         if( start < tempE && end > tempE){ // merge by setting new end point
             tempE = end;
             flag = false;
         } else if ( start > tempS && end > tempE){ // split clusters
-            cout << " Span += " << tempE - tempS << "\t" << tempE << " - " << tempS << endl;
+            //cout << " Span += " << tempE - tempS << "\t" << tempE << " - " << tempS << endl;
             span += ( tempE - tempS);
             tempE = end;
             tempS = start;
@@ -183,7 +183,7 @@ float getSpan( vector<Vec4f> lines){
     
     if(!flag){
         //cout << "final increment" << endl;
-        cout << " Span += " << tempE - tempS << "\t" << tempE << " - " << tempS << endl;
+        //cout << " Span += " << tempE - tempS << "\t" << tempE << " - " << tempS << endl;
         span += (tempE - tempS);
     }
     return span;
