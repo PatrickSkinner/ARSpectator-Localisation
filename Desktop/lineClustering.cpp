@@ -257,6 +257,9 @@ Mat clusterLines(Mat in, vector<Vec4f>& lines){
     bool botFound = false;
     int minRange = 1800;
     
+    int topCluster = -1;
+    int bottomCluster = -1;
+    
     // Find the largest horizontal line spans above and below the divider
     while( !topFound || !botFound ){
         bool matched = false;
@@ -270,10 +273,12 @@ Mat clusterLines(Mat in, vector<Vec4f>& lines){
                             recleanedHorizontals.push_back( horizontals[i] );
                             matched = true;
                             tempTopFound = true;
+                            topCluster = cluster;
                         } else if ( getCenter(horizontals[i])[1]  > mid && !botFound){
                             recleanedHorizontals.push_back( horizontals[i] );
                             matched = true;
                             tempBotFound = true;
+                            bottomCluster = cluster;
                         }
                     }
                 }
@@ -285,7 +290,57 @@ Mat clusterLines(Mat in, vector<Vec4f>& lines){
         if(minRange < -200) break;
     }
     
-    horizontals = recleanedHorizontals;
+    divider = Vec4f(0, mid-(grad*540), 1920, mid+(grad*540));
+    Vec4f vertL = Vec4f( 1920/2, 0, 1920/2, 1080);
+    
+    vector<Vec4f> topLines;
+    vector<Vec4f> bottomLines;
+    const float sizeThresh = 0.8;
+    int distToCenterT = -1;
+    int distToCenterB = -1;
+    
+    /** Now that the largest clusters for top and bottom are known, finding the cluster closest to the center point that is at least 75% the width of the largest cluster */
+    for(  int cluster = 0; cluster <= horiLabels[horiLabels.size()-1 ]; cluster++ ){
+            bool isCloser = false;
+            for(int i = 0; i < horizontals.size(); i++){
+                if( cluster == horiLabels[i] ){
+                    if( getCenter(horizontals[i])[1] < mid && (ranges[cluster] > ranges[topCluster]*sizeThresh)){ // top
+                        Vec3f intr = intersect(horizontals[i], vertL);
+                        Point intrP = Point2f( intr[0], intr[1] );
+                        if( !isCloser && ( getDistance( intrP, Point2f(1920/2,mid)) < distToCenterT || distToCenterT == -1)){
+                            distToCenterT = getDistance( intrP, Point2f(1920/2,mid));
+                            topLines.clear();
+                            isCloser = true;
+                        }
+                        if(isCloser){
+                            topLines.push_back(horizontals[i]);
+                            if( getDistance( intrP, Point2f(1920/2,mid)) < distToCenterT) distToCenterT = getDistance( intrP, Point2f(1920/2,mid));
+                        }
+                    } else if( ranges[cluster] > ranges[bottomCluster]*sizeThresh) {
+                        Vec3f intr = intersect(horizontals[i], vertL);
+                        Point intrP = Point2f( intr[0], intr[1] );
+                        if( !isCloser && ( getDistance( intrP, Point2f(1920/2,mid)) < distToCenterB || distToCenterB == -1)){
+                            //cout << getDistance( intrP, Point2f(1920/2,mid)) << " < " << distToCenterB << endl;
+                            distToCenterB = getDistance( intrP, Point2f(1920/2,mid));
+                            bottomLines.clear();
+                            isCloser = true;
+                        }
+                        if(isCloser){
+                            bottomLines.push_back(horizontals[i]);
+                            if( getDistance( intrP, Point2f(1920/2,mid)) < distToCenterB){
+                                distToCenterB = getDistance( intrP, Point2f(1920/2,mid));
+                                //cout << getDistance( intrP, Point2f(1920/2,mid)) << " < " << distToCenterB << endl;
+                            }
+                        }
+                    }
+                }
+            }
+    }
+    //horizontals = recleanedHorizontals;
+    
+    topLines.insert(topLines.end(), bottomLines.begin(), bottomLines.end());
+    horizontals = topLines;
+    
     divider = Vec4f(0, mid-(grad*540), 1920, mid+(grad*540));
     line(in, Point(divider[0], divider[1]), Point(divider[2], divider[3]), Scalar(255,255,255), 4);
     
@@ -543,6 +598,9 @@ vector<Match> findMatches( vector<Vec4f> detectedLines, vector<Vec4f> templateLi
         }
         bestMatches.push_back( Match( templateLines[0], lines[closest], 666) );
         
+        Vec2f firstMP = getCenter( lines[closest] );
+        float firstDist; // Distance between first matched line and the second
+        
         for(int i = 1; i < templateLines.size() - 2; i++){
             int index = -1;
             int minDist = -1;
@@ -553,13 +611,28 @@ vector<Match> findMatches( vector<Vec4f> detectedLines, vector<Vec4f> templateLi
                     if( abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]) < minDist || minDist == -1 ){
                         // Check if not already matched
                         if( !isMatched(j, lines, bestMatches) ){
-                            minDist = abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]);
-                            index = j;
+                            if(i != 2){
+                                minDist = abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]);
+                                index = j;
+                            } else {
+                                Vec2f thirdMP = getCenter(lines[j]);
+                                float secondDist = lineLength( Vec4f( firstMP[0], firstMP[1], thirdMP[0], thirdMP[1]));
+                                if( secondDist > firstDist ){
+                                    cout << "First Distance: " << firstDist << endl;
+                                    cout << "Second Distance: " << secondDist << endl;
+                                    minDist = abs(intersect(lines[j], horiz)[0] - intersect(bestMatches[bestMatches.size()-1].l2, horiz)[0]);
+                                    index = j;
+                                }
+                            }
                         }
                     }
                 }
             }
             bestMatches.push_back( Match( templateLines[i], lines[index], 666) );
+            if(i == 1){
+                Vec2f secondMP = getCenter(lines[index]);
+                firstDist = lineLength( Vec4f( firstMP[0], firstMP[1], secondMP[0], secondMP[1]));
+            }
         }
         
     } else if (selectedLine == 1){ // center

@@ -144,6 +144,10 @@ bool compareVecByX(Vec4f v1, Vec4f v2)
     return (leftmostV1 < leftmostV2);
 }
 
+float getDistance( Point2f p1, Point2f p2){
+    return lineLength(Vec4f(p1.x, p1.y, p2.x, p2.y ));
+}
+
 float getSpan( vector<Vec4f> lines){
     //cout << "lines: " << lines.size() << endl;
     vector<Vec4f> sortedLines = lines;

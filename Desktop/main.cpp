@@ -179,7 +179,7 @@ int main( int argc, char** argv){
     
     //auto t1 = std::chrono::steady_clock::now();
     
-    vector<Vec4f> rawLines = getLines( src, true, true );
+    vector<Vec4f> rawLines = getLines( src, autoThresh, true );
     if(rotateInput){
         Mat M = getRotationMatrix2D(Point2f(1920/2,1080/2), -7, 1);
         warpAffine(src, src, M, Size(1920,1080));
@@ -579,6 +579,8 @@ int main( int argc, char** argv){
                 reproj.push_back(out[i]);
             }
             // I didn't know how to change the object ordering in Blender, so I did this BS. Sorry.
+            
+            // rendered pont order
             /*
             cout << reproj[1].x << ", " << reproj[1].y << endl;
             cout << reproj[5].x << ", " << reproj[5].y << endl;
@@ -589,12 +591,15 @@ int main( int argc, char** argv){
              */
             //cout << "\n\n\n";
             
+            // real points
+            /*
             cout << reproj[0].x << ", " << reproj[0].y << endl;
             cout << reproj[1].x << ", " << reproj[1].y << endl;
             cout << reproj[2].x << ", " << reproj[2].y << endl;
             cout << reproj[3].x << ", " << reproj[3].y << endl;
             cout << reproj[4].x << ", " << reproj[4].y << endl;
             cout << reproj[5].x << ", " << reproj[5].y << endl;
+            */
             //cout << "\n";
         }
             
@@ -610,8 +615,8 @@ int main( int argc, char** argv){
             
             Mat objPoints;
             if(selectedLine == 0){
-                //objPoints = (Mat_<float>(4,3) << 8.23, -63.24, 0, -1.34, -63.24, 0, 8.52, -4.86, 0, -1, -4.86, 0);
-                objPoints = (Mat_<float>(4,3) <<   0,1200,0,    110,1200,0,      0,0,0,    110,0,0   );
+                objPoints = (Mat_<float>(4,3) << 8.23, -63.24, 0, -1.34, -63.24, 0, 8.52, -4.86, 0, -1, -4.86, 0);
+                //objPoints = (Mat_<float>(4,3) <<   0,1200,0,    110,1200,0,      0,0,0,    110,0,0   );
             } else if(selectedLine == 1) {
                 objPoints = (Mat_<float>(4,3) << -40, -62.98, 0, -49.96, -62.96, 0, -39.91, -4.69, 0, -49.68, -4.58, 0);
             } else if(selectedLine == 2){
@@ -631,7 +636,23 @@ int main( int argc, char** argv){
                                                     0, 0, 1);
             
             solvePnP(objPoints, imgPoints, cameraMatrix, distCoeffs, rVec, tVec);
-            drawFrameAxes(finale, cameraMatrix, distCoeffs, rVec, tVec, 50, 5);
+            //drawFrameAxes(finale, cameraMatrix, distCoeffs, rVec, tVec, 50, 5);
+
+            vector<Point2f> reprojPoints;
+            Mat objPointsP = (Mat_<float>(6,3) << 8.23, -63.24, 0, 8.52, -4.86, 0, -1.34, -63.24, 0, -1, -4.86, 0, -22.62, -63.14, 0, -22.34, -4.77, 0);
+            projectPoints(objPointsP, rVec, tVec, cameraMatrix, distCoeffs, reprojPoints);
+            for(int i = 0; i < reprojPoints.size(); i++){
+                line(finale, reprojPoints[i], Point2f( reprojPoints[i].x, reprojPoints[i].y), Scalar(0,0,255), 15);
+            }
+            
+            if(getReprojection){
+                cout << reprojPoints[1].x << ", " << reprojPoints[1].y << endl;
+                cout << reprojPoints[5].x << ", " << reprojPoints[5].y << endl;
+                cout << reprojPoints[3].x << ", " << reprojPoints[3].y << endl;
+                cout << reprojPoints[0].x << ", " << reprojPoints[0].y << endl;
+                cout << reprojPoints[4].x << ", " << reprojPoints[4].y << endl;
+                cout << reprojPoints[2].x << ", " << reprojPoints[2].y << endl;
+            }
             
             vector<Mat> rot, tran, norm;
             //decomposeHomographyMat(homography, cameraMatrix, rot, tran, norm);
